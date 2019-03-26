@@ -54,8 +54,9 @@ class TokenTypes(enum.Enum):
      OPLS,                      # Closed with CLCB
      OPCAP,
      LABEL,
+     PRECEDENCE,
      END,
-    ) = range(21)
+    ) = range(22)
 
 class Token:
     def __init__(self, _type, value=None, line=0, pos=0):
@@ -122,6 +123,9 @@ class Label(Node): pass
 class Throw(Node): pass
 
 class List(Node): pass
+
+class Precedence(Node): pass
+
 
 def fio(thing):
     "first if only"
@@ -207,6 +211,10 @@ class Parser:
         elif self.matchc('<'):
             if self.matchc('-'): return self.t(TokenTypes.ARROW)
             else: raise SyntaxError("Missing the dash in the arrow")
+        elif self.peekc().isdigit():
+            val = self.peekc()
+            self.nextc()
+            return self.t(TokenTypes.LITERAL, val)
         elif self.matchc('('):
             return self.t(TokenTypes.OPEN)
         elif self.matchc(')'):
@@ -229,6 +237,8 @@ class Parser:
             return self.t(TokenTypes.QUIET)
         elif self.matchc('^'):
             return self.t(TokenTypes.LABEL)
+        elif self.matchc('$'):
+            return self.t(TokenTypes.PRECEDENCE)
         elif self.matchc('{'):
             return self.t(TokenTypes.OPLS)
         elif self.matchc('}'):
@@ -342,11 +352,19 @@ class Parser:
         else: return fio(output)
 
     def parseLabeled(self):
-        # Labeled <- Suffix Label?
-        output = self.parseSuffix()
+        # Labeled <- WithPreced Label?
+        output = self.parseWithPreced()
         if self.matcht(TokenTypes.LABEL):
             label = self.consumet(TokenTypes.IDENTIFIER)
             return Label([label.value, output])
+        return output
+
+    def parseWithPreced(self):
+        # WithPreced <- Suffix Precedence?
+        output = self.parseSuffix()
+        if self.matcht(TokenTypes.PRECEDENCE):
+            prec = self.consumet(TokenTypes.LITERAL)
+            return Precedence([prec.value, output])
         return output
 
     def parseSuffix(self):
@@ -1204,6 +1222,22 @@ def test_tokenizer():
         Token(TokenTypes.END,               line=1, pos=19),
     ])
 
+    # Precedence
+    test("E <- E$1 '+' E$2 / n", [
+        Token(TokenTypes.IDENTIFIER, 'E',   line=0, pos=0),
+        Token(TokenTypes.ARROW,             line=0, pos=2),
+        Token(TokenTypes.IDENTIFIER, 'E',   line=0, pos=5),
+        Token(TokenTypes.PRECEDENCE,        line=0, pos=6),
+        Token(TokenTypes.LITERAL,    '1',   line=0, pos=7),
+        Token(TokenTypes.LITERAL,    '+',   line=0, pos=9),
+        Token(TokenTypes.IDENTIFIER, 'E',   line=0, pos=13),
+        Token(TokenTypes.PRECEDENCE,        line=0, pos=14),
+        Token(TokenTypes.LITERAL,    '2',   line=0, pos=15),
+        Token(TokenTypes.PRIORITY,          line=0, pos=17),
+        Token(TokenTypes.IDENTIFIER, 'n',   line=0, pos=19),
+        Token(TokenTypes.END,               line=0, pos=20),
+    ])
+
 
 def test_parser():
     test = functools.partial(test_runner, lambda x: Parser(x).parse)
@@ -1350,6 +1384,14 @@ EndOfFile  <- !.
         ])]),
         Definition(['A', Expression([
             CaptureBlock(Expression([Literal('a')]))
+        ])]),
+    ]))
+
+    # Precedence level
+
+    test("S <- %A$1", Grammar([
+        Definition(['S', Expression([
+            Precedence(['1', CaptureNode(Identifier('A'))]),
         ])]),
     ]))
 
@@ -1727,6 +1769,8 @@ def test_compile():
         gen("return"),
         gen("halt"),
     ))
+
+    
 
     # Lists
     assert(cc("A <- !{ .* } .") == bn(

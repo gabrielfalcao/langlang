@@ -8,7 +8,8 @@ Definition <- %Identifier LEFTARROW^Arrow Expression^Exp
 Expression <- %Sequence (SLASH %Sequence^Seq)*
 Sequence   <- %Prefix*
 Prefix     <- (%AND / %NOT)? %Labeled
-Labeled    <- %Suffix %Label?
+Labeled    <- %WithPreced %Label?
+WithPreced <- %Suffix %Precedence?
 Suffix     <- %Primary (%QUESTION / %STAR / %PLUS)?
 Primary    <- %BlockCapture
             / %CAPTURE? %Identifier !LEFTARROW
@@ -16,6 +17,7 @@ Primary    <- %BlockCapture
             / %Literal / %Class / %DOT
 BlockCapture <- OPCB Expression^Exp CLCB^Block
 Label        <- LABEL (Identifier !LEFTARROW)^Label
+Precedence   <- PRECEDENCE [0-9]
 
 # Lexical syntax
 Identifier <- %{ IdentStart IdentCont* } Spacing
@@ -34,6 +36,7 @@ Char       <- %{ '\\' [nrt'"\[\]\\]^Special }
             / %{ !'\\' .^Char }
 
 LABEL      <- '^'
+PRECEDENCE <- '$'
 LEFTARROW  <- '<' '-'^ArrowDash Spacing
 SLASH      <- '/' Spacing
 AND        <- '&' Spacing
