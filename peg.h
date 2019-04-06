@@ -77,9 +77,12 @@ typedef struct {
 /* Entry that's stored in the Machine's stack for supporting backtrack
    on the ordered choice operator */
 typedef struct {
-  const char *i;
-  Value *l;
-  Instruction *pc;
+  Instruction *pc;    /* Saved Program Counter Register */
+  Instruction *pcN;   /* First instruction of non-terminal N */
+  const char *i;      /* Subject position for matching */
+  const char *ir;     /* Matching position for left recursive frames */
+  int32_t k;          /* Operator Precedence */
+  Value *l;           /* Subject for matching lists */
   uint32_t btCount;
   uint32_t ltCount;
 } mStackFrame;

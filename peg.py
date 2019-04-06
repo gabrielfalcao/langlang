@@ -613,7 +613,7 @@ InstructionParams = {
     Instructions.OP_TEST_CHAR: 2,
     Instructions.OP_TEST_ANY: 2,
     Instructions.OP_JUMP: 1,
-    Instructions.OP_CALL: 1,
+    Instructions.OP_CALL: 2,
     Instructions.OP_RETURN: 0,
     Instructions.OP_SPAN: 2,
     Instructions.OP_SET: 0,
@@ -944,7 +944,7 @@ class Compiler:
 
     def genCode(self):
         # It's always 2 because invariant contains two instructions
-        self.emit("call", 2)
+        self.emit("call", 1, 2)
         pos = self.emit("jump")
         # Above invariant + the cap_open below that appears if
         # hasCaptureOps is True.
@@ -969,7 +969,7 @@ class Compiler:
         # addresses
         for identifier, callsites in self.callsites.items():
             for cs in callsites:
-                self.code[cs] = gen("call", addresses[identifier] - cs)
+                self.code[cs] = gen("call", 1, addresses[identifier] - cs)
         # Pack the integers as binary data
         return struct.pack('>' + ('I' * len(self.code)), *self.code)
 
@@ -1559,7 +1559,7 @@ def test_compile():
 
     # Char 'c'
     assert(cc("S <- 'a'") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 4),
         gen("char", ord('a')),
         gen("return"),
@@ -1568,7 +1568,7 @@ def test_compile():
 
     # Any
     assert(cc("S <- .") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 4),
         gen("any"),
         gen("return"),
@@ -1577,7 +1577,7 @@ def test_compile():
 
     # Not
     assert(cc("S <- !'a'") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 7),
         gen("choice", 4),
         gen("char", ord('a')),
@@ -1589,7 +1589,7 @@ def test_compile():
 
     # And
     assert(cc("S <- &'a'") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 10),
         gen("choice", 7),
         gen("choice", 4),
@@ -1604,7 +1604,7 @@ def test_compile():
 
     # Concatenation
     assert(cc("S <- 'a' . 'c'") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 6),
         gen("char", ord('a')),
         gen("any"),
@@ -1615,7 +1615,7 @@ def test_compile():
 
     # Ordered Choice
     assert(cc("S <- 'a' / 'b'") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 7),
         gen("choice", 3),
         gen("char", ord('a')),
@@ -1626,7 +1626,7 @@ def test_compile():
     ))
 
     assert(cc("S <- 'a' / 'b' / 'c' / 'd'") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 13),
         gen("choice", 3),
         gen("char", ord('a')),
@@ -1644,7 +1644,7 @@ def test_compile():
 
     # Repetition (Star)
     assert(cc("S <- 'a'*") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 6),
         gen("choice", 3),
         gen("char", ord('a')),
@@ -1655,7 +1655,7 @@ def test_compile():
 
     # Plus
     assert(cc("S <- 'a'+") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 7),
         gen("char", ord('a')),
         gen("choice", 3),
@@ -1667,7 +1667,7 @@ def test_compile():
 
     # Question
     assert(cc("S <- 'a' 'b'?") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 7),
         gen("char", ord('a')),
         gen("choice", 3),
@@ -1679,7 +1679,7 @@ def test_compile():
 
     # Class -> Char
     assert(cc("S <- [a]") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 4),
         gen("char", ord('a')),
         gen("return"),
@@ -1688,7 +1688,7 @@ def test_compile():
 
     # O0: Class -> Char / Char
     assert(cc("S <- [ab]") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 7),
         gen("choice", 3),
         gen("char", ord('a')),
@@ -1700,7 +1700,7 @@ def test_compile():
 
     # O0: Class -> Span / Span
     assert(cc("S <- [a-zA-Z]") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 7),
         gen("choice", 3),
         gen("span", ord('a'), ord('z')),
@@ -1712,7 +1712,7 @@ def test_compile():
 
     # Class -> Span / Char
     assert(cc("S <- [a-z_]") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 7),
         gen("choice", 3),
         gen("span", ord('a'), ord('z')),
@@ -1724,7 +1724,7 @@ def test_compile():
 
     # Class -> Span / Span / Char
     assert(cc("S <- [a-zA-Z_]") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 10),
         gen("choice", 3),
         gen("span", ord('a'), ord('z')),
@@ -1743,11 +1743,11 @@ def test_compile():
 
     # Grammar/Variables (Call/Return)
     assert(cc("S <- D '+'D\nD <- '0' / '1'") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 11),
-        gen("call", 4),
+        gen("call", 1, 4),
         gen("char", ord('+')),
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("return"),
         gen("choice", 3),
         gen("char", ord('0')),
@@ -1760,7 +1760,7 @@ def test_compile():
     # Error labels
 
     assert(cc("S <- 'a'^f") == bn(
-        gen("call", 2),
+        gen("call", 1, 2),
         gen("jump", 7),
         gen("choice", 3),
         gen("char", ord('a')),
@@ -1770,11 +1770,9 @@ def test_compile():
         gen("halt"),
     ))
 
-    
-
     # Lists
     assert(cc("A <- !{ .* } .") == bn(
-        gen("call",   0x02),    # 0x00: Call 0x02
+        gen("call",   1, 2),    # 0x00: Call 0x02
         gen("jump",   0x0c),    # 0x01: Jump 0x0c
         gen("choice", 0x08),    # 0x02: Choice 0x08
 
@@ -1795,7 +1793,7 @@ def test_compile():
 
     # Atom
     assert(cc('A <- { "test" }\n') == bn(
-        gen("call",   0x02),    # 0x00: Call 0x02
+        gen("call",   1, 2),    # 0x00: Call 0x02
         gen("jump",   0x06),    # 0x01: Jump 0x06
         gen("open"),            # 0x02: Open
         gen("atom",   0x00),    # 0x03: Atom 0x00
@@ -1806,7 +1804,7 @@ def test_compile():
 
     # Captures
     assert(cc("S <- %{ 'a' }") == bn(
-        gen("call", 0x02),      # 0x00: Call 0x02
+        gen("call", 1, 2),      # 0x00: Call 0x02
         gen("jump", 0x08),      # 0x01: Jump 0x07
         gen("cap_open", 0, 0),  # 0x02: CapOpen 0 0
         gen("cap_open", 1, 0),  # 0x03: CapOpen 1 0
@@ -1819,7 +1817,7 @@ def test_compile():
     ))
 
     assert(cc("S <- %{ 'a' 'b' }") == bn(
-        gen("call", 0x02),      # 0x00: Call 0x02
+        gen("call", 1, 2),      # 0x00: Call 0x02
         gen("jump", 0x0a),      # 0x01: Jump 0x09
         gen("cap_open", 0, 0),  # 0x02: CapOpen 0 0
         gen("cap_open", 1, 0),  # 0x03: CapOpen 1 0
@@ -1834,11 +1832,11 @@ def test_compile():
     ))
 
     assert(cc("S <- %A\nA <- %{ 'a' }") == bn(
-        gen("call", 0x02),      # 0x00: Call 0x02
+        gen("call", 1, 2),      # 0x00: Call 0x02
         gen("jump", 0x0c),      # 0x01: Jump 0x0b
         gen("cap_open", 0, 0),  # 0x02: CapOpen 0 0
         gen("cap_open", 0, 1),  # 0x03: CapOpen 0 1
-        gen("call", 0x03),      # 0x04: Call 0x03
+        gen("call", 1, 3),      # 0x04: Call 0x03
         gen("cap_close", 0, 1), # 0x05: CapClose 0 0
         gen("return"),          # 0x06: Return
         gen("cap_open", 1, 0),  # 0x07: CapOpen 1 0

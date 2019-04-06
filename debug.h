@@ -24,8 +24,8 @@
   buffer[INSTRUCTION_SIZE] = '\0';                                      \
   debug_byte (instr, buffer, INSTRUCTION_SIZE);                         \
   const char *opname = OP_NAME (tmp->rator);                            \
-  DEBUGLN ("     INSTR: %s, RATOR: " BFMT                               \
-           " (%17s), RAND: " BFMT " (%d)",                              \
+  DEBUGLN (" I: %s, RATOR: " BFMT                                       \
+           " (\033[1;32m%17s\033[0m), RAND: " BFMT " (%d)",             \
            buffer,                                                      \
            B (tmp->rator),                                              \
            opname ? opname : "HALT",                                    \
@@ -35,14 +35,14 @@
 
 #  define DEBUG_INSTRUCTION_NEXT() do {                                 \
     const char *opname = OP_NAME (pc->rator);                           \
-    DEBUGLN ("     RATOR: " BFMT " (%17s), RAND: " BFMT " (%d)",        \
-             B (pc->rator), opname ? opname : "HALT",                   \
+    DEBUGLN ("\033[1;32m # %-17s\033[0m RATOR: " BFMT ", RAND: " BFMT " (%d)", \
+             opname ? opname : "HALT", B (pc->rator),                   \
              B (pc->u32),  UOPERAND0 (pc));                             \
   } while (0)
 
 #  define DEBUG_FAILSTATE() do {                                \
-    DEBUGLN ("       FAIL[%s]", i);                             \
-    DEBUGLN ("         NEXT: %s", OP_NAME ((*(pc)).rator));     \
+    DEBUGLN ("  \033[1;31mFAIL[%s]\033[0m", i);                 \
+    DEBUGLN ("     NEXT: %s", OP_NAME ((*(pc)).rator));         \
   } while (0)
 
 #  define DEBUG_FAILSTATE2() do {                               \
@@ -56,14 +56,18 @@
     printf ("]\n");                             \
   } while (0)
 
-#  define DEBUG_STACK() do {                                            \
-    DEBUGLN ("         STACK: %p %p", (void *) sp, (void *) m->stack);  \
-    for (mStackFrame *_tmp_bt = sp; _tmp_bt > m->stack; _tmp_bt--) {    \
-      DEBUGLN ("           [I]: %p %p `%s'",                            \
-               (void *) _tmp_bt,                                        \
-               (void *) (_tmp_bt - 1)->pc,                              \
-               (_tmp_bt - 1)->i);                                       \
+#  define DEBUG_STACK()                                                 \
+  do {                                                                  \
+    DEBUGLN ("  \033[37mSTACK: %p %p\033[0m",                           \
+             (void *) sp, (void *) m->stack);                           \
+    mStackFrame *_tmp_bt; uint32_t _ii;                                 \
+    for (_ii = 1, _tmp_bt = sp - 1; _tmp_bt > m->stack; _tmp_bt--, _ii++) { \
+      DEBUGLN ("   \033[37m %i. pc:%p i:`%s', ir:`%s`\033[0m",          \
+               _ii,                                                     \
+               (void *) _tmp_bt->pc,                                    \
+               _tmp_bt->i, _tmp_bt->ir);                                \
     }                                                                   \
+    DEBUGLN ("");                                                       \
   } while (0)
 
 # else  /* TEST */

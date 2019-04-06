@@ -111,7 +111,7 @@ void mLoad (Machine *m, Bytecode *code)
      table. For each string in the string table we first read its size
      and then the actual string. */
   headerSize = READ_UINT16 (code);
-  DEBUGLN ("   Header(%d)", headerSize);
+  DEBUGLN ("Header(%d)", headerSize);
   for (i = 0; i < headerSize; i++) {
     size_t ssize = READ_UINT8 (code);
     Value *symbol = mSymbol (m, (const char *) code, ssize);
@@ -123,7 +123,7 @@ void mLoad (Machine *m, Bytecode *code)
   /* Code size is a 16bit integer and contains how many instructions
      the program body contains. */
   code_size = READ_UINT16 (code);
-  DEBUGLN ("   Code(%d)", code_size);
+  DEBUGLN ("Code(%d)", code_size);
   if ((tmp = m->code = calloc (code_size, sizeof (Instruction))) == NULL)
     FATAL ("Can't allocate %s", "memory");
   for (i = 0; i < code_size; i++) {
@@ -167,7 +167,7 @@ static Value *appendChar (Value *s, char c)
 /* Run the matching machine */
 uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
 {
-  mStackFrame *sp = m->stack;
+  mStackFrame *tmp, *frame, *sp = m->stack;
   Instruction *pc = m->code;
   const char *i = input;
   uint32_t btCount = 0, ltCount = 0;
@@ -175,8 +175,21 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
   const char *ffp = NULL;       /* Farther Failure Position */
   uint32_t label = PEG_SUCCESS; /* Error Label */
 
-  /** Push data onto the machine's stack  */
-#define PUSH(ii,pp) do { sp->i = ii; sp->pc = pp; sp++; } while (0)
+  /** Push backtrack frame onto the stack  */
+#define PUSH(ii,pp) do { sp->i = ii; sp->pc = pp;               \
+    DEBUGLN ("  PUSH(%p, '%s')", (void*)(sp->pc), (sp->i));     \
+    sp++; } while (0)
+  /** Push left recursive frame onto the stack */
+#define PUSHLR(pcR,pcA,ii,iir,kk) do {                  \
+    sp->pc = (pcR); sp->pcN = (pcA);                    \
+    sp->i = ii; sp->ir = iir; sp->k = (kk);             \
+    DEBUGLN ("  PUSHLR(%p, %p, '%s', '%s', %d)",        \
+             ((void*) (sp->pc)),                        \
+             ((void*) (sp->pcN)),                       \
+             (char*) (sp->i),                           \
+             (char*) (sp->ir),                          \
+             (kk));                                     \
+    sp++; } while (0)
   /** Pop data from the machine's stack. Notice it doesn't dereference
       the pointer, callers are supposed to do that when needed. */
 #define POP() (--sp)
@@ -186,18 +199,21 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
   /** Update the cursor & keep track of FFP */
 #define IPP() do { i++; if (i > ffp) ffp = i; } while (0)
 
-  DEBUGLN ("   Run");
+  DEBUGLN ("Run");
 
   listInit (&treestk);
 
   while (true) {
     /* No-op if DEBUG isn't defined */
     DEBUG_INSTRUCTION_NEXT ();
-    DEBUG_STACK ();
 
     switch (pc->rator) {
     case OP_HALT:
     end:
+      printf ("The suffix: %s\n", i);
+      printf ("The ir suffix: %s\n", i);
+      printf ("The FFP: %s\n", ffp);
+
       if (label > 1) {
         Symbol *lb = SYMBOL (listItem (&m->symbols, label-2));
         printf ("Match failed at pos %ld with label ",
@@ -226,9 +242,9 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
         return label;
       }
     case OP_CAP_OPEN:
-      /* printf ("OPEN[%c]: %s\n", UOPERAND1 (pc) ? 'T' : 'F', */
-      /*         SYMBOL (listItem (&m->symbols, */
-      /*                           UOPERAND2 (pc)))->name); */
+      printf ("OPEN[%c]: %s\n", UOPERAND1 (pc) ? 'T' : 'F',
+              SYMBOL (listItem (&m->symbols,
+                                UOPERAND2 (pc)))->name);
       btCount++;
       if (UOPERAND1 (pc)) {     /* If the match is a terminal */
         listPush (&treestk, stringNew ("", 0));
@@ -238,38 +254,38 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
         ltCount = 0;
       }
       pc++;
-      continue;
+      break;
     case OP_CAP_CLOSE:
-      /* printf ("CLOSE[%c]: %s\n", UOPERAND1 (pc) ? 'T' : 'F', */
-      /*         SYMBOL (listItem (&m->symbols, */
-      /*                           UOPERAND2 (pc)))->name); */
+      printf ("CLOSE[%c]: %s\n", UOPERAND1 (pc) ? 'T' : 'F',
+              SYMBOL (listItem (&m->symbols,
+                                UOPERAND2 (pc)))->name);
       if (btCount > 1) {
         append (listTop (&treestk), listPop (&treestk));
         btCount--;
         ltCount++;
       }
       pc++;
-      continue;
+      break;
     case OP_CAPCHAR:
-      /* printf ("CAPCHAR\n"); */
+      printf ("CAPCHAR\n");
       appendChar (listTop (&treestk), *(i-1));
       pc++;
-      continue;
+      break;
     case OP_CHAR:
-      DEBUGLN ("       OP_CHAR: `%c' == `%c' ? %d", *i,
+      DEBUGLN ("  EQ: `%c' == `%c' ? %d", *i,
                UOPERAND0 (pc), *i == UOPERAND0 (pc));
       /* printf ("CHAR: `%c' == `%c'\n", */
       /*         *i == '\n' ? 'N' : *i, */
       /*         UOPERAND0 (pc) == '\n' ? 'N' : UOPERAND0 (pc)); */
       if (i < THE_END && *i == UOPERAND0 (pc)) { IPP (); pc++; }
       else goto fail;
-      continue;
+      break;
     case OP_ANY:
       DEBUGLN ("       OP_ANY: `%c' < |s| ? %d", *i, i < THE_END);
       /* printf ("ANY: %c\n", *i); */
       if (i < THE_END) { IPP (); pc++; }
       else goto fail;
-      continue;
+      break;
     case OP_SPAN:
       DEBUGLN ("       OP_SPAN: `%c' in [%c(%d)-%c(%d)]", *i,
                UOPERAND1 (pc), UOPERAND1 (pc),
@@ -277,39 +293,123 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
       /* printf ("SPAN: %c\n", *i); */
       if (*i >= UOPERAND1 (pc) && *i <= UOPERAND2 (pc)) { IPP (); pc++; }
       else goto fail;
-      continue;
+      break;
     case OP_CHOICE:
       sp->btCount = btCount;
       sp->ltCount = ltCount;
       PUSH (i, pc + UOPERAND0 (pc));
       pc++;
-      continue;
+      break;
     case OP_COMMIT:
       assert (sp > m->stack);
       POP ();                   /* Discard backtrack entry */
       pc += SOPERAND0 (pc);     /* Jump to the given position */
-      continue;
+      break;
     case OP_PARTIAL_COMMIT:
       assert (sp > m->stack);
       pc += SOPERAND0 (pc);
       (sp - 1)->i = i;
-      continue;
+      break;
     case OP_BACK_COMMIT:
       assert (sp > m->stack);
       i = POP ()->i;
       pc += SOPERAND0 (pc);
-      continue;
+      break;
     case OP_JUMP:
       pc = m->code + SOPERAND0 (pc);
-      continue;
-    case OP_CALL:
-      PUSH (NULL, pc + 1);
-      pc += SOPERAND0 (pc);
-      continue;
+      break;
+    case OP_CALL: {
+      int32_t k = SOPERAND1 (pc);
+      int32_t l = SOPERAND2 (pc);
+
+      /* REMOVE THIS SOON */
+      /* assert (k == 1); */
+      DEBUGLN ("  PC:  %p", (void*)pc);
+      DEBUGLN ("  PCR: %p", (void*)(pc+l));
+
+      frame = NULL;
+      DEBUGLN ("  FRAME LOOK UP: %d,%d", k, l);
+      for (tmp = sp-1; tmp >= m->stack; tmp--) {
+        DEBUGLN ("    * FRAME LOOKUP: pcN:%p,pc+l:%p",
+                (void*) (tmp->pcN), (void*) (pc+l));
+        if (tmp->pcN == (pc+l) && (tmp->i == i)) {
+          DEBUGLN ("    >>> FRAME FOUND");
+          frame = tmp;
+          break;
+        }
+      }
+
+      /* Begin of lvar.1 */
+      /* 〈pc,s,e〉 ---->〈pc+l,s,(pc+1,pc+l,s,fail,k):e〉, where (pc+l,s) ∉ ℒe */
+      if (!frame) {
+        DEBUGLN ("    !!! FRAME NOT FOUND");
+        DEBUGLN ("  CALL 1: pc:%p, pcR:%p, pcA:%p", (void*) pc, (void*) (pc+1), (void*) (pc+l));
+        PUSHLR (pc+1, pc+l, i, NULL, k);
+        pc = pc+l;
+        break;
+      } else {
+        /* lvar.3 */
+        /* 〈pc,s,e〉 ----> Fail〈e〉, where ℒe(pc+l,s) = fail */
+        if (frame->ir == NULL) {
+          DEBUGLN ("  CALL 2: pc:%p, pcR:%p, pcA:%p", (void*) pc, (void*) (pc+1), (void*) (pc+l));
+          goto fail;
+        }
+        /* lvar.4 */
+        /* 〈pc,s,e〉 ---->〈pc+1, s′, e〉, where ℒe(pc+l,s) = (s′,k′) and k ≥ k′ */
+        else if (k >= frame->k) {
+          DEBUGLN ("  CALL 3: pc:%p, pcR:%p, pcA:%p", (void*) pc, (void*) (pc+1), (void*) (pc+l));
+          pc = pc+1;
+          printf ("    *  i: %s\n", i);
+          printf ("    * ii: %s\n", frame->i);
+          printf ("    * ir: %s\n", frame->ir);
+          i = frame->ir;
+          break;
+        }
+        /* lvar.5 */
+        /* 〈pc,s,e〉 ----> Fail〈e〉, where ℒe(pc+l,s) = (s′,k′) and k < k′ */
+        else if (k < frame->k) {
+          /* Currently disabled */
+          assert (0);
+          DEBUGLN ("  CALL 4: pc:%p, pcR:%p, pcA:%p", (void*) pc, (void*) (pc+1), (void*) (pc+l));
+          goto fail;
+        }
+      }
+      assert (0);
+      break;
+    }
     case OP_RETURN:
       assert (sp > m->stack);
-      pc = POP ()->pc;
-      continue;
+      frame = POP ();
+      /*
+       * 〈pc,s′′,(pcR,pcA,s,s′,k):e〉 ----> 〈pcA,s,(pcR,pcA,s,s′′,k):e〉,
+       *
+       *  where |s′′| < |s′|
+       *     or s′ = fail
+       *
+       * cheat table
+       *     s = frame->i
+       *    s` = frame->ir
+       *   s`` = i
+       */
+      /* Rest of lvar.1 */
+      if (frame->ir == NULL || i > frame->ir) {
+        DEBUGLN ("  1. i[%s] < frame->ir[%s]: %d",
+                 i, frame->ir, frame->ir && i >= frame->ir);
+        PUSHLR (frame->pc, frame->pcN, frame->i, i, frame->k);
+        pc = frame->pcN;
+        i = frame->i;
+      }
+      /* 〈pc, s′′, (pcR, pcA, s, s′, k):e〉 ----> 〈pcR, s′, e〉,
+         where |s′′| >= |s′| */
+      else if (i <= frame->ir) {
+        DEBUGLN ("  2. i[%s] >= frame->ir[%s]: %d, pc: %p, pcR: %p",
+                 i, frame->ir, i >= frame->ir,
+                 (void*)pc,
+                 (void*)frame->pc);
+        pc = frame->pc;
+        i = frame->ir;
+      }
+      break;
     case OP_THROW:
       label = UOPERAND0 (pc);
       goto end;
@@ -321,22 +421,26 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
       DEBUG_FAILSTATE ();
 
       if (sp > m->stack) {
+        /* Fail〈(pcR, pcA, s, s′, k):e〉 ----> 〈pcR, s′, e〉 */
         /* Fail〈(pc,i1):e〉 ----> 〈pc,i1,e〉 */
-        do i = POP ()->i;
-        while (i == NULL && sp > m->stack);
+        do {
+          frame = POP ();
+          if (frame->ir) {
+            DEBUGLN ("     WITH LR");
+            i = frame->ir;
+          } else {
+            DEBUGLN ("     WITHOUT LR");
+            i = frame->i;
+          }
+          /* i = frame->ir ? frame->ir : frame->i; */
+        } while (i == NULL && sp > m->stack);
         pc = sp->pc;            /* Restore the program counter */
-
-        /* printf (" FAIL[%u:%u-%u:%u]: %c\n", */
-        /*         btCount, sp->btCount, */
-        /*         ltCount, sp->ltCount, */
-        /*         *i == '\n' ? 'N' : *i); */
 
         /* Clean capture from sequence */
         while (ltCount > sp->ltCount) {
           valFree (pop (listTop (&treestk)));
           ltCount--;
         }
-
         /* Clean capture stack in depth */
         while (btCount > sp->btCount) {
           valFree (listPop (&treestk));
@@ -347,10 +451,12 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
         listFree (&treestk);
         return PEG_FAILURE;
       }
-      continue;
+      break;
     default:
       FATAL ("Unknown Instruction 0x%04x [%s]", pc->rator, OP_NAME (pc->rator));
     }
+
+    DEBUG_STACK ();
   }
 
 #undef POP

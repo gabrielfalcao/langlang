@@ -691,25 +691,27 @@ void test_var1 ()
 
   writeHeader (b, instructions);
   /* Start */
-  b[0x1] = GEN1 (OP_CALL, 0x2); /* 0x0: Call 0x2 */
-  b[0x2] = GEN1 (OP_JUMP, 0xb); /* 0x1: Jump 0xb */
+  b[0x1] = GEN2 (OP_CALL, 1, 2);   /* 0x0: Call 1 0x2 */
+  b[0x2] = GEN1 (OP_JUMP, 0xb);    /* 0x1: Jump 0xb */
   /* S <- D '+' D */
-  b[0x3] = GEN1 (OP_CALL, 0x4); /* 0x2: Call 0x4 */
-  b[0x4] = GEN1 (OP_CHAR, '+'); /* 0x3: Char '+' */
-  b[0x5] = GEN1 (OP_CALL, 0x2); /* 0x4: Call 0x2 */
-  b[0x6] = GEN0 (OP_RETURN);    /* 0x5: Return */
+  b[0x3] = GEN2 (OP_CALL, 1, 4);   /* 0x2: Call 1 0x4 */
+  b[0x4] = GEN1 (OP_CHAR, '+');    /* 0x3: Char '+' */
+  b[0x5] = GEN2 (OP_CALL, 2, 1);   /* 0x4: Call 1 0x2 */
+  b[0x6] = GEN0 (OP_RETURN);       /* 0x5: Return */
   /* D <- '0' / '1' */
-  b[0x7] = GEN1 (OP_CHOICE, 3); /* 0x6: Choice 0x3 */
-  b[0x8] = GEN1 (OP_CHAR, '0'); /* 0x7: Char '0' */
-  b[0x9] = GEN1 (OP_COMMIT, 2); /* 0x8: Commit 0x2 */
-  b[0xa] = GEN1 (OP_CHAR, '1'); /* 0x9: Char '1' */
-  b[0xb] = GEN0 (OP_RETURN);    /* 0xa: Return */
+  b[0x7] = GEN1 (OP_CHOICE, 3);    /* 0x6: Choice 0x3 */
+  b[0x8] = GEN1 (OP_CHAR, '0');    /* 0x7: Char '0' */
+  b[0x9] = GEN1 (OP_COMMIT, 2);    /* 0x8: Commit 0x2 */
+  b[0xa] = GEN1 (OP_CHAR, '1');    /* 0x9: Char '1' */
+  b[0xb] = GEN0 (OP_RETURN);       /* 0xa: Return */
   /* End */
-  b[0xc] = GEN0 (OP_HALT);      /* 0xb: Halt */
+  b[0xc] = GEN0 (OP_HALT);         /* 0xb: Halt */
 
   mInit (&m);
   mLoad (&m, (Bytecode *) b);
-  assert (mMatch (&m, i, strlen (i), NULL) == 0); /* Didn't fail */
+  size_t len = strlen (i);
+  assert (mMatch (&m, i, len, NULL) == 0); /* Didn't fail */
+  printf ("SUFFIX: %s\n", m.i);
   assert (m.i - i == 3);        /* Matched the whole input */
 
   mFree (&m);
@@ -728,13 +730,14 @@ void test_var2 ()
   TESTNAME ("t:var.2");
 
   writeHeader (b, instructions);
+  /* S <- D '+' D; D <- '0' / '1' */
   /* Start */
-  b[0x1] = GEN1 (OP_CALL, 0x2); /* 0x0: Call 0x2 */
-  b[0x2] = GEN1 (OP_JUMP, 0xb); /* 0x1: Jump 0xb */
+  b[0x1] = GEN2 (OP_CALL, 1, 2);   /* 0x0: Call 0x2 0 */
+  b[0x2] = GEN1 (OP_JUMP, 0xb);    /* 0x1: Jump 0xb */
   /* S <- D '+' D */
-  b[0x3] = GEN1 (OP_CALL, 0x4); /* 0x2: Call 0x4 */
-  b[0x4] = GEN1 (OP_CHAR, '+'); /* 0x3: Char '+' */
-  b[0x5] = GEN1 (OP_CALL, 0x2); /* 0x4: Call 0x2 */
+  b[0x3] = GEN2 (OP_CALL, 1, 4);   /* 0x2: Call 0x4 0 */
+  b[0x4] = GEN1 (OP_CHAR, '+');    /* 0x3: Char '+' */
+  b[0x5] = GEN2 (OP_CALL, 1, 2);   /* 0x4: Call 0x2 0 */
   b[0x6] = GEN0 (OP_RETURN);    /* 0x5: Return */
   /* D <- '0' / '1' */
   b[0x7] = GEN1 (OP_CHOICE, 3); /* 0x6: Choice 0x3 */
@@ -788,7 +791,7 @@ void test_cap1 ()
 
   writeHeader (b, instructions);
   /* S <- %{ 'a' } */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x9);
   b[0x3] = GEN2 (OP_CAP_OPEN, 0x0, 0x0); /* CapOpen 0 (Main) */
   b[0x4] = GEN2 (OP_CAP_OPEN, 0x1, 0x1);
@@ -832,12 +835,12 @@ static void test_error0 ()
 
   writeHeader (b, instructions);
   /* S <- A / B; A <- 'a'; B <- 'b' */
-  b[0x1] = GEN1 (OP_CALL, 0x2);   /* CALL L(S) */
+  b[0x1] = GEN2 (OP_CALL, 1, 2);   /* CALL L(S) */
   b[0x2] = GEN1 (OP_JUMP, 0xB);
   b[0x3] = GEN1 (OP_CHOICE, 0x3); /* L(S) = 0x3 */
-  b[0x4] = GEN1 (OP_CALL, 0x4);   /* CALL L(A) */
+  b[0x4] = GEN2 (OP_CALL, 1, 4);   /* CALL L(A) */
   b[0x5] = GEN1 (OP_COMMIT, 0x2);
-  b[0x6] = GEN1 (OP_CALL, 0x4);   /* CALL L(B) */
+  b[0x6] = GEN2 (OP_CALL, 1, 4);   /* CALL L(B) */
   b[0x7] = GEN0 (OP_RETURN);
   b[0x8] = GEN1 (OP_CHAR, 0x61);  /* 'a' LS(A) = 0x8 */
   b[0x9] = GEN0 (OP_RETURN);
@@ -863,7 +866,7 @@ static void test_throw ()
 
   writeHeader (b, instructions);
 
-  b[0x1] = GEN1 (OP_CALL, 0x2);   /* CALL L(S) */
+  b[0x1] = GEN2 (OP_CALL, 1, 2);   /* CALL L(S) */
   b[0x2] = GEN1 (OP_JUMP, 0x4);
   b[0x3] = GEN1 (OP_THROW, 0x2);
   b[0x4] = GEN0 (OP_RETURN);
@@ -925,7 +928,7 @@ static void test_lst_empty1 ()
 
   writeHeader (b, instructions);
   /* *Empty* */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x4);
   b[0x3] = GEN0 (OP_RETURN);
   b[0x4] = GEN0 (OP_HALT);
@@ -954,7 +957,7 @@ static void test_lst_any1 ()
 
   writeHeader (b, instructions);
   /* S <- . */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x4);
   b[0x3] = GEN0 (OP_ANY);
   b[0x4] = GEN0 (OP_RETURN);
@@ -984,7 +987,7 @@ static void test_lst_any2 ()
 
   writeHeader (b, instructions);
   /* S <- . */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x4);
   b[0x3] = GEN0 (OP_ANY);
   b[0x4] = GEN0 (OP_RETURN);
@@ -1012,7 +1015,7 @@ static void test_lst_term1 ()
 
   writeHeader (b, instructions);
   /* S <- "MyTerm" */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x4);
   b[0x3] = GEN1 (OP_ATOM, 0x0);
   b[0x4] = GEN0 (OP_RETURN);
@@ -1043,7 +1046,7 @@ static void test_lst_term2 ()
 
   writeHeader (b, instructions);
   /* S <- "aTerm" */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x4);
   b[0x3] = GEN1 (OP_ATOM, 0x0);
   b[0x4] = GEN0 (OP_RETURN);
@@ -1076,7 +1079,7 @@ static void test_lst_term3 ()
 
   writeHeader (b, instructions);
   /* S <- "aTerm" */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x4);
   b[0x3] = GEN1 (OP_ATOM, 0x0);
   b[0x4] = GEN0 (OP_RETURN);
@@ -1110,7 +1113,7 @@ static void test_lst_term4 ()
 
   writeHeader (b, instructions);
   /* S <- "aTerm" */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x4);
   b[0x3] = GEN1 (OP_ATOM, 0x0);
   b[0x4] = GEN0 (OP_RETURN);
@@ -1150,7 +1153,7 @@ static void test_lst_list1 ()
 
   writeHeader (b, instructions);
   /* S <- { "test" } */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x6);
   b[0x3] = GEN0 (OP_OPEN);
   b[0x4] = GEN1 (OP_ATOM, 0x0);
@@ -1196,7 +1199,7 @@ static void test_lst_list2 ()
 
   writeHeader (b, instructions);
   /* S <- { "foo" } */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x6);
   b[0x3] = GEN0 (OP_OPEN);
   b[0x4] = GEN1 (OP_ATOM, 0x0);
@@ -1238,7 +1241,7 @@ static void test_lst_list3 ()
 
   writeHeader (b, instructions);
   /* S <- { "foo" } */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x6);
   b[0x3] = GEN0 (OP_OPEN);
   b[0x4] = GEN1 (OP_ATOM, 0x0);
@@ -1280,7 +1283,7 @@ static void test_lst_list4 ()
 
   writeHeader (b, instructions);
   /* S <- { "foo" } */
-  b[0x1] = GEN1 (OP_CALL, 0x2);
+  b[0x1] = GEN2 (OP_CALL, 1, 2);
   b[0x2] = GEN1 (OP_JUMP, 0x6);
   b[0x3] = GEN0 (OP_OPEN);
   b[0x4] = GEN1 (OP_ATOM, 0x0);
@@ -1512,9 +1515,9 @@ int main ()
   test_rep1_partial_commit ();
   test_rep2 ();
   test_rep2_partial_commit ();
+  test_span1 ();
   test_var1 ();
   test_var2 ();
-  test_span1 ();
 
   test_error0 ();
   test_throw ();
