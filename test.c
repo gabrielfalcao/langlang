@@ -25,6 +25,11 @@
 #include "debug.h"
 #include "peg.h"
 
+#define TESTNAME(t) \
+  printf("\n\033[0;35m%s "                                              \
+         "------------------------------------------------------"       \
+         "---------\033[0m\n\n", t)
+
 /* Utilities to write bytecode for testing */
 
 #define GEN0(o)       (enc (gen0 (o)))
@@ -72,7 +77,7 @@ static inline void writeHeader (uint32_t *prog, size_t nInstructions)
 
 static void test_gen_args ()
 {
-  printf (" * gen args\n");
+  TESTNAME ("gen args");
   printf ("     gen0arg (OP_ANY): 0x%02x\n", gen0 (OP_ANY));
   assert (gen0 (OP_ANY) == 0x10000000);
   printf ("     gen1arg (OP_CHAR, 'a'): 0x%02x\n", gen1 (OP_CHAR, 'a'));
@@ -88,7 +93,7 @@ static void test_read_instr ()
 {
   Instruction instr;
   uint32_t code;
-  printf ("* read_instr\n");
+  TESTNAME ("read_instr");
   printf ("     gen0arg (OP_ANY): 0x%02x\n", gen0 (OP_ANY));
 
   assert (OP_MASK (gen0 (OP_ANY)) == OP_ANY);
@@ -115,7 +120,7 @@ static void test_ch1 ()
   int instructions = 2;
   uint32_t b[progSize (instructions)];
   const char *i = "a";
-  DEBUGLN (" * t:ch.1");
+  TESTNAME ("t:ch.1");
 
   writeHeader (b, instructions);
   /* S <- 'a' */
@@ -140,7 +145,7 @@ static void test_ch2 ()
   Machine m;
   int instructions = 2;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:ch.2");
+  TESTNAME ("t:ch.2");
 
   writeHeader (b, instructions);
   /* S <- 'a' */
@@ -164,7 +169,7 @@ static void test_any1 ()
   int instructions = 2;
   uint32_t b[progSize (instructions)];
   const char *i = "a";
-  DEBUGLN (" * t:any.1");
+  TESTNAME ("t:any.1");
 
   writeHeader (b, instructions);
   /* S <- . */
@@ -190,7 +195,7 @@ static void test_any2 ()
   Machine m;
   int instructions = 2;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:any.2");
+  TESTNAME ("t:any.2");
 
   writeHeader (b, instructions);
   /* S <- . */
@@ -214,7 +219,7 @@ static void test_not1 ()
   int instructions = 5;
   uint32_t b[progSize (instructions)];
   const char *i = "b";
-  DEBUGLN (" * t:not.1");
+  TESTNAME ("t:not.1");
 
   writeHeader (b, instructions);
   /* S <- !'a' */
@@ -238,7 +243,7 @@ void test_not1_fail_twice ()
   int instructions = 4;
   uint32_t b[progSize (instructions)];
   const char *i = "b";
-  DEBUGLN (" * t:not.1 (fail-twice)");
+  TESTNAME ("t:not.1 (fail-twice)");
 
   writeHeader (b, instructions);
   /* S <- !'a' */
@@ -265,7 +270,7 @@ void test_not2 ()
   Machine m;
   int instructions = 5;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:not.2");
+  TESTNAME ("t:not.2");
 
   writeHeader (b, instructions);
   /* S <- !'a' */
@@ -286,7 +291,7 @@ void test_not2_fail_twice ()
   Machine m;
   int instructions = 4;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:not.2 (fail-twice)");
+  TESTNAME ("t:not.2 (fail-twice)");
 
   writeHeader (b, instructions);
   /* !'a' */
@@ -312,7 +317,7 @@ void test_and1 ()
   int instructions = 8;
   uint32_t b[progSize (instructions)];
   const char *i = "a";
-  DEBUGLN (" * t:and.1");
+  TESTNAME ("t:and.1");
 
   writeHeader (b, instructions);
   /* S <- &'a' */
@@ -339,7 +344,7 @@ void test_and1_back_commit ()
   int instructions = 5;
   uint32_t b[progSize (instructions)];
   const char *i = "a";
-  DEBUGLN (" * t:and.1 (back-commit)");
+  TESTNAME ("t:and.1 (back-commit)");
 
   writeHeader (b, instructions);
   /* S <- &'a' */
@@ -367,7 +372,7 @@ void test_and2 ()
   Machine m;
   int instructions = 8;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:and.2");
+  TESTNAME ("t:and.2");
 
   writeHeader (b, instructions);
   /* &'a' */
@@ -391,7 +396,7 @@ void test_and2_back_commit ()
   Machine m;
   int instructions = 5;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:and.2 (back-commit)");
+  TESTNAME ("t:and.2 (back-commit)");
 
   writeHeader (b, instructions);
   /* S <- &'a' */
@@ -418,7 +423,7 @@ void test_con1 ()
   int instructions = 4;
   uint32_t b[progSize (instructions)];
   const char *i = "abc";
-  DEBUGLN (" * t:con.1");
+  TESTNAME ("t:con.1");
 
   writeHeader (b, instructions);
   /* 'a' . 'c' */
@@ -445,7 +450,7 @@ void test_con2 ()
   Machine m;
   int instructions = 4;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:con.2");
+  TESTNAME ("t:con.2");
 
   writeHeader (b, instructions);
   /* S <- 'a' 'c' . */
@@ -470,7 +475,7 @@ void test_con3 ()
   Machine m;
   int instructions = 4;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:con.3");
+  TESTNAME ("t:con.3");
 
   writeHeader (b, instructions);
   /* S <- 'a' 'c' . */
@@ -495,7 +500,7 @@ void test_ord1 ()
   Machine m;
   int instructions = 5;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:ord.1");
+  TESTNAME ("t:ord.1");
 
   writeHeader (b, instructions);
   /* 'a' / 'b' */
@@ -522,7 +527,7 @@ void test_ord2 ()
   int instructions = 5;
   uint32_t b[progSize (instructions)];
   const char *i = "a";
-  DEBUGLN (" * t:ord.2");
+  TESTNAME ("t:ord.2");
 
   writeHeader (b, instructions);
   /* 'a' / 'b' */
@@ -551,7 +556,7 @@ void test_ord3 ()
   int instructions = 5;
   uint32_t b[progSize (instructions)];
   const char *i = "b";
-  DEBUGLN (" * t:ord.3");
+  TESTNAME ("t:ord.3");
 
   writeHeader (b, instructions);
   /* 'a' / 'b' */
@@ -580,7 +585,7 @@ void test_rep1 ()
   int instructions = 4;
   uint32_t b[progSize (instructions)];
   const char *i = "aab";
-  DEBUGLN (" * t:rep.1");
+  TESTNAME ("t:rep.1");
 
   writeHeader (b, instructions);
   /* S <- 'a*' */
@@ -603,7 +608,7 @@ void test_rep1_partial_commit ()
   int instructions = 4;
   uint32_t b[progSize (instructions)];
   const char *i = "aab";
-  DEBUGLN (" * t:rep.1 (partial-commit)");
+  TESTNAME ("t:rep.1 (partial-commit)");
 
   writeHeader (b, instructions);
   /* S <- 'a*' */
@@ -631,7 +636,7 @@ void test_rep2 ()
   int instructions = 4;
   uint32_t b[progSize (instructions)];
   const char *i = "b";
-  DEBUGLN (" * t:rep.2");
+  TESTNAME ("t:rep.2");
 
   writeHeader (b, instructions);
   /* S <- 'a*' */
@@ -654,7 +659,7 @@ void test_rep2_partial_commit ()
   int instructions = 4;
   uint32_t b[progSize (instructions)];
   const char *i = "b";
-  DEBUGLN (" * t:rep.2 (partial-commit)");
+  TESTNAME ("t:rep.2 (partial-commit)");
 
   writeHeader (b, instructions);
   /* S <- 'a*' */
@@ -682,7 +687,7 @@ void test_var1 ()
   int instructions = 0xc;
   uint32_t b[progSize (instructions)];
   const char *i = "1+1";
-  DEBUGLN (" * t:var.1");
+  TESTNAME ("t:var.1");
 
   writeHeader (b, instructions);
   /* Start */
@@ -720,7 +725,7 @@ void test_var2 ()
   Machine m;
   int instructions = 0xc;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:var.2");
+  TESTNAME ("t:var.2");
 
   writeHeader (b, instructions);
   /* Start */
@@ -752,7 +757,7 @@ void test_span1 ()
   int instructions = 4;
   uint32_t b[progSize (instructions)];
   const char *i = "abcdefgh";
-  DEBUGLN (" * t:span.1");
+  TESTNAME ("t:span.1");
 
   writeHeader (b, instructions);
   /* S <- '[a-e]*' */
@@ -779,7 +784,7 @@ void test_cap1 ()
   uint32_t b[progSize (instructions)];
   Value *out = NULL;
   const char *i = "a";
-  DEBUGLN (" * t:cap.1");
+  TESTNAME ("t:cap.1");
 
   writeHeader (b, instructions);
   /* S <- %{ 'a' } */
@@ -823,7 +828,7 @@ static void test_error0 ()
   int instructions = 12;
   uint32_t b[progSize (instructions)];
   const char *i = "c";
-  DEBUGLN (" * t:err.0");
+  TESTNAME ("t:err.0");
 
   writeHeader (b, instructions);
   /* S <- A / B; A <- 'a'; B <- 'b' */
@@ -854,7 +859,7 @@ static void test_throw ()
   int instructions = 12;
   uint32_t b[progSize (instructions)];
   const char *i = "c";
-  DEBUGLN (" * t:throw.0");
+  TESTNAME ("t:throw.0");
 
   writeHeader (b, instructions);
 
@@ -884,7 +889,7 @@ static void test_label_not_3 ()
   Machine m;
   int instructions = 5;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:label.not.3.1");
+  TESTNAME ("t:label.not.3.1");
 
   writeHeader (b, instructions);
   /* S <- ![⇑l] */
@@ -916,7 +921,7 @@ static void test_lst_empty1 ()
   int instructions = 4;
   uint32_t b[progSize (instructions)];
   Value *input = NULL;
-  DEBUGLN (" * t:empty.1");
+  TESTNAME ("t:empty.1");
 
   writeHeader (b, instructions);
   /* *Empty* */
@@ -945,7 +950,7 @@ static void test_lst_any1 ()
   int instructions = 5;
   uint32_t b[progSize (instructions)];
   Value *input, *output;
-  DEBUGLN (" * t:lst.any.1");
+  TESTNAME ("t:lst.any.1");
 
   writeHeader (b, instructions);
   /* S <- . */
@@ -975,7 +980,7 @@ static void test_lst_any2 ()
   Machine m;
   int instructions = 5;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:lst.any.2");
+  TESTNAME ("t:lst.any.2");
 
   writeHeader (b, instructions);
   /* S <- . */
@@ -1003,7 +1008,7 @@ static void test_lst_term1 ()
   int instructions = 5;
   uint32_t b[progSize (instructions)];
   Value *input, *output;
-  DEBUGLN (" * t:lst.term.1");
+  TESTNAME ("t:lst.term.1");
 
   writeHeader (b, instructions);
   /* S <- "MyTerm" */
@@ -1034,7 +1039,7 @@ static void test_lst_term2 ()
   int instructions = 5;
   uint32_t b[progSize (instructions)];
   Value *input;
-  DEBUGLN (" * t:lst.term.2");
+  TESTNAME ("t:lst.term.2");
 
   writeHeader (b, instructions);
   /* S <- "aTerm" */
@@ -1067,7 +1072,7 @@ static void test_lst_term3 ()
   Machine m;
   int instructions = 5;
   uint32_t b[progSize (instructions)];
-  DEBUGLN (" * t:lst.term.3");
+  TESTNAME ("t:lst.term.3");
 
   writeHeader (b, instructions);
   /* S <- "aTerm" */
@@ -1101,7 +1106,7 @@ static void test_lst_term4 ()
   int instructions = 5;
   uint32_t b[progSize (instructions)];
   Value *input;
-  DEBUGLN (" * t:lst.term.4");
+  TESTNAME ("t:lst.term.4");
 
   writeHeader (b, instructions);
   /* S <- "aTerm" */
@@ -1141,7 +1146,7 @@ static void test_lst_list1 ()
   int instructions = 7;
   uint32_t b[progSize (instructions)];
   Value *input, *output;
-  DEBUGLN (" * t:lst.list.1");
+  TESTNAME ("t:lst.list.1");
 
   writeHeader (b, instructions);
   /* S <- { "test" } */
@@ -1187,7 +1192,7 @@ static void test_lst_list2 ()
   int instructions = 7;
   uint32_t b[progSize (instructions)];
   Value *input, *output;
-  DEBUGLN (" * t:lst.list.2");
+  TESTNAME ("t:lst.list.2");
 
   writeHeader (b, instructions);
   /* S <- { "foo" } */
@@ -1229,7 +1234,7 @@ static void test_lst_list3 ()
   int instructions = 7;
   uint32_t b[progSize (instructions)];
   Value *input, *output;
-  DEBUGLN (" * t:lst.list.3");
+  TESTNAME ("t:lst.list.3");
 
   writeHeader (b, instructions);
   /* S <- { "foo" } */
@@ -1271,7 +1276,7 @@ static void test_lst_list4 ()
   int instructions = 7;
   uint32_t b[progSize (instructions)];
   Value *output;
-  DEBUGLN (" * t:lst.list.4");
+  TESTNAME ("t:lst.list.4");
 
   writeHeader (b, instructions);
   /* S <- { "foo" } */
