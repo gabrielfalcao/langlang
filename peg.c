@@ -325,7 +325,7 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
       for (tmp = sp-1; tmp >= m->stack; tmp--) {
         DEBUGLN ("    * FRAME LOOKUP: pcN:%p,pc+l:%p",
                 (void*) (tmp->pcN), (void*) (pc+l));
-        if (tmp->pcN == (pc+l) && (tmp->i == i)) {
+        if (tmp->lr && tmp->pcN == (pc+l) && (tmp->i == i)) {
           DEBUGLN ("    >>> FRAME FOUND");
           frame = tmp;
           break;
