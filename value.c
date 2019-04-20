@@ -493,7 +493,7 @@ static void dictPrint (Dict *dict, int level)
   printf ("}");
 }
 
-static void rawPrint (const char *s, size_t len)
+void rawPrint (const char *s, size_t len)
 {
   const char *escape[256] = { NULL }; /* Only good for ascii. */
   int c;

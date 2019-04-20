@@ -5,6 +5,9 @@
 # include <stdlib.h>
 
 # ifdef DEBUG
+/* meh */
+extern void rawPrint (const char *s, size_t len);
+
 #  define BFMT "%c%c%c%c%c%c%c%c"
 #  define B(byte)        \
   (byte & 0x80 ? '1' : '0'), \
@@ -41,7 +44,9 @@
   } while (0)
 
 #  define DEBUG_FAILSTATE() do {                                \
-    DEBUGLN ("  \033[1;31mFAIL[%s]\033[0m", i);                 \
+    printf (" \033[1;31m# FAIL[");                               \
+    rawPrint (i, strlen (i));                                   \
+    printf ("]\033[0m");                                        \
     DEBUGLN ("     NEXT: %s", OP_NAME ((*(pc)).rator));         \
   } while (0)
 
@@ -62,13 +67,32 @@
              (void *) sp, (void *) m->stack);                           \
     mStackFrame *_tmp_bt; uint32_t _ii;                                 \
     for (_ii = 1, _tmp_bt = sp - 1; _tmp_bt > m->stack; _tmp_bt--, _ii++) { \
-      DEBUGLN ("   \033[37m %i. pc:%p i:`%s', ir:`%s`\033[0m",          \
-               _ii,                                                     \
-               (void *) _tmp_bt->pc,                                    \
-               _tmp_bt->i, _tmp_bt->ir);                                \
+      printf ("   \033[37m %i. pc:%p i:`", _ii, (void *) _tmp_bt->pc);  \
+      if (_tmp_bt->i) rawPrint (_tmp_bt->i, strlen (_tmp_bt->i));       \
+      printf ("`, ir:`");                                               \
+      if (_tmp_bt->ir) rawPrint (_tmp_bt->ir, strlen (_tmp_bt->ir));                     \
+      DEBUGLN ("`\033[0m");                                             \
     }                                                                   \
     DEBUGLN ("");                                                       \
   } while (0)
+
+#  define DEBUG_PUSH(__sp)                                              \
+  do {                                                                  \
+    printf ("  PUSH(%p, '", (void*)(__sp->pc));                         \
+    if (__sp->i) rawPrint (__sp->i, strlen (__sp->i));                  \
+    printf ("')");                                                      \
+  } while (0);
+
+#  define DEBUG_PUSHLR(__sp)                                            \
+  do {                                                                  \
+    printf ("  PUSHLR(%p, %p, '",                                       \
+            ((void*) (__sp->pc)),                                       \
+            ((void*) (__sp->pcN)));                                     \
+    if (__sp->i) rawPrint (__sp->i, strlen (__sp->i));                  \
+    printf ("', '");                                                    \
+    if (__sp->ir) rawPrint (__sp->ir, strlen (__sp->ir));               \
+    printf ("', %d)\n", __sp->k);                                       \
+  } while (0);
 
 # else  /* TEST */
 #  define DEBUGLN(f, ...)
@@ -78,6 +102,8 @@
 #  define DEBUG_FAILSTATE2()
 #  define DEBUGL(m)
 #  define DEBUG_STACK()
+#  define DEBUG_PUSH(__sp)
+#  define DEBUG_PUSHLR(__sp)
 # endif  /* TEST */
 
 static inline char *debug_byte (uint32_t a, char *buffer, int size) {
