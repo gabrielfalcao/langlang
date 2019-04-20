@@ -176,8 +176,9 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
   uint32_t label = PEG_SUCCESS; /* Error Label */
 
   /** Push backtrack frame onto the stack  */
-#define PUSH(ii,pp) do { sp->i = ii; sp->pc = pp;               \
-    DEBUGLN ("  PUSH(%p, '%s')", (void*)(sp->pc), (sp->i));     \
+#define PUSH(ii,pp) do {                                \
+    sp->i = ii; sp->pc = pp; sp->ir = NULL;             \
+    sp->pcN = NULL;                                     \
     sp++; } while (0)
   /** Push left recursive frame onto the stack */
 #define PUSHLR(pcR,pcA,ii,iir,kk) do {                  \
