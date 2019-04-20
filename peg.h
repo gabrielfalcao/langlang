@@ -83,6 +83,7 @@ typedef struct {
   const char *ir;     /* Matching position for left recursive frames */
   int32_t k;          /* Operator Precedence */
   Value *l;           /* Subject for matching lists */
+  bool lr;
   uint32_t btCount;
   uint32_t ltCount;
 } mStackFrame;

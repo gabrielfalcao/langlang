@@ -178,11 +178,11 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
   /** Push backtrack frame onto the stack  */
 #define PUSH(ii,pp) do {                                \
     sp->i = ii; sp->pc = pp; sp->ir = NULL;             \
-    sp->pcN = NULL;                                     \
+    sp->pcN = NULL; sp->lr = false;                     \
     sp++; } while (0)
   /** Push left recursive frame onto the stack */
 #define PUSHLR(pcR,pcA,ii,iir,kk) do {                  \
-    sp->pc = (pcR); sp->pcN = (pcA);                    \
+    sp->pc = (pcR); sp->pcN = (pcA); sp->lr = true;     \
     sp->i = ii; sp->ir = iir; sp->k = (kk);             \
     DEBUGLN ("  PUSHLR(%p, %p, '%s', '%s', %d)",        \
              ((void*) (sp->pc)),                        \
@@ -424,7 +424,7 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
         /* Fail〈(pc,i1):e〉 ----> 〈pc,i1,e〉 */
         do {
           frame = POP ();
-          if (frame->ir) {
+          if (frame->lr) {
             DEBUGLN ("     WITH LR");
             i = frame->ir;
           } else {
