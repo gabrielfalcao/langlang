@@ -215,6 +215,12 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
       printf ("The ir suffix: %s\n", i);
       printf ("The FFP: %s\n", ffp);
 
+      /* Output captured values */
+      if (out && listLen (&treestk) > 0) {
+        *out = listPop (&treestk);
+        listFree (&treestk);
+      }
+
       if (label > 1) {
         Symbol *lb = SYMBOL (listItem (&m->symbols, label-2));
         printf ("Match failed at pos %ld with label ",
@@ -235,11 +241,6 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
         /* Store final suffix upon successful match for testing
          * purposes. */
         m->i = i;
-        /* Output captured values */
-        if (out && listLen (&treestk) > 0) {
-          *out = listPop (&treestk);
-          listFree (&treestk);
-        }
         return label;
       }
     case OP_CAP_OPEN:
