@@ -273,17 +273,13 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
       pc++;
       break;
     case OP_CHAR:
-      DEBUGLN ("  EQ: `%c' == `%c' ? %d", *i,
+      DEBUGLN ("  EQ: `%c'(i) == `%c'(rand) ? %d", *i,
                UOPERAND0 (pc), *i == UOPERAND0 (pc));
-      /* printf ("CHAR: `%c' == `%c'\n", */
-      /*         *i == '\n' ? 'N' : *i, */
-      /*         UOPERAND0 (pc) == '\n' ? 'N' : UOPERAND0 (pc)); */
       if (i < THE_END && *i == UOPERAND0 (pc)) { IPP (); pc++; }
       else goto fail;
       break;
     case OP_ANY:
       DEBUGLN ("       OP_ANY: `%c' < |s| ? %d", *i, i < THE_END);
-      /* printf ("ANY: %c\n", *i); */
       if (i < THE_END) { IPP (); pc++; }
       else goto fail;
       break;
@@ -291,7 +287,6 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
       DEBUGLN ("       OP_SPAN: `%c' in [%c(%d)-%c(%d)]", *i,
                UOPERAND1 (pc), UOPERAND1 (pc),
                UOPERAND2 (pc), UOPERAND2 (pc));
-      /* printf ("SPAN: %c\n", *i); */
       if (*i >= UOPERAND1 (pc) && *i <= UOPERAND2 (pc)) { IPP (); pc++; }
       else goto fail;
       break;
@@ -393,8 +388,10 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
        *   s`` = i
        */
       /* Rest of lvar.1 */
+      DEBUGLN ("  I: %s, FRAME->I: %s, FRAME->IR: %s",
+               i, frame->i, frame->ir);
       if (frame->ir == NULL || i > frame->ir) {
-        DEBUGLN ("  1. i[%s] < frame->ir[%s]: %d",
+        DEBUGLN ("  1. i[%s] > frame->ir[%s]: %d",
                  i, frame->ir, frame->ir && i >= frame->ir);
         PUSHLR (frame->pc, frame->pcN, frame->i, i, frame->k);
         pc = frame->pcN;
@@ -403,7 +400,7 @@ uint32_t mMatch (Machine *m, const char *input, size_t input_size, Value **out)
       /* 〈pc, s′′, (pcR, pcA, s, s′, k):e〉 ----> 〈pcR, s′, e〉,
          where |s′′| >= |s′| */
       else if (i <= frame->ir) {
-        DEBUGLN ("  2. i[%s] >= frame->ir[%s]: %d, pc: %p, pcR: %p",
+        DEBUGLN ("  2. i[%s] <= frame->ir[%s]: %d, pc: %p, pcR: %p",
                  i, frame->ir, i >= frame->ir,
                  (void*)pc,
                  (void*)frame->pc);
