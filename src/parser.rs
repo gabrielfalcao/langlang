@@ -43,14 +43,35 @@ pub struct Fun {
     size: usize,
 }
 
-#[derive(Clone, Debug)]
-pub enum Token {
-    Deferred(usize),
-    StringID(usize),
+#[derive(Debug)]
+pub enum AnnotationAlgo {
+    Standard,
+    // Updated,
+}
+
+#[derive(Debug)]
+pub struct Config {
+    annotation: Option<AnnotationAlgo>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config { annotation: None }
+    }
+}
+
+impl Config {
+    pub fn new_with_standard_errlabels() -> Self {
+        Config {
+            annotation: Some(AnnotationAlgo::Standard),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Compiler {
+    // Tweak some knobs within the compiler
+    config: Config,
     // The index of the last instruction written the `code` vector
     cursor: usize,
     // Vector where the compiler writes down the instructions
@@ -75,29 +96,21 @@ pub struct Compiler {
     // Map from the set of label IDs to the set with the first address
     // of the label's respective recovery expression
     recovery: HashMap<usize, usize>,
-    // Map from the set of addresses to the set of vectors of
-    // terminals that should be expected in case the expression under
-    // the address fails parsing.  This is similar to `final_follows`,
-    // except that this map can contain deferred addresses that still
-    // need to be resolved during backpatching.
-    follows: HashMap<usize, Vec<Token>>,
-    // Same type of map as `follows`, the difference is that follows
-    // map can contain deferred addresses, and this set can't.  All
-    // addresses here are final.
-    final_follows: HashMap<usize, Vec<usize>>,
-    // Stack of sets of firsts, are used to build the follows sets
-    firsts: Vec<Vec<Token>>,
-    // Map of the sets of string IDs of rule names to the sets of
-    // first tokens that appear in a rule
-    rules_firsts: HashMap<usize, Vec<Token>>,
     // Used for printing out debugging messages with the of the
     // structure the call stack the compiler is traversing
     indent_level: usize,
 }
 
+impl Default for Compiler {
+    fn default() -> Self {
+        Self::new_with_config(Config::default())
+    }
+}
+
 impl Compiler {
-    pub fn new() -> Self {
+    pub fn new_with_config(config: Config) -> Self {
         Compiler {
+            config,
             cursor: 0,
             code: vec![],
             strings: vec![],
@@ -107,10 +120,6 @@ impl Compiler {
             addrs: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
-            follows: HashMap::new(),
-            final_follows: HashMap::new(),
-            firsts: vec![],
-            rules_firsts: HashMap::new(),
             indent_level: 0,
         }
     }
@@ -121,9 +130,13 @@ impl Compiler {
     /// follows sets deferred during the code main generation pass.
     pub fn compile_str(&mut self, s: &str) -> Result<(), Error> {
         let mut p = Parser::new(s);
-        self.compile(p.parse_grammar()?)?;
+        let grammar = p.parse_grammar()?;
+        let grammar = match self.config.annotation {
+            None => grammar,
+            Some(AnnotationAlgo::Standard) => StandardAlgorithm::new().traverse(grammar)?,
+        };
+        self.compile(grammar)?;
         self.backpatch_callsites()?;
-        self.backpatch_follows();
         Ok(())
     }
 
@@ -132,7 +145,6 @@ impl Compiler {
     pub fn program(self) -> vm::Program {
         vm::Program::new(
             self.identifiers,
-            self.final_follows,
             self.labels,
             self.recovery,
             self.strings,
@@ -180,57 +192,11 @@ impl Compiler {
         Ok(())
     }
 
-    fn backpatch_follows(&mut self) {
-        for (pos, tokens) in &self.follows {
-            let mut addrs = vec![];
-            for token in tokens {
-                addrs.extend(self.resolve_token(token))
-            }
-            addrs.dedup();
-            self.final_follows.insert(*pos, addrs);
-        }
-    }
-
-    fn resolve_token(&self, token: &Token) -> Vec<usize> {
-        match token {
-            Token::StringID(id) => vec![*id],
-            Token::Deferred(id) => {
-                let mut v = vec![];
-                for first in self.rules_firsts[id].clone() {
-                    v.extend(self.resolve_token(&first))
-                }
-                v
-            }
-        }
-    }
-
-    /// Traverse AST node, emit bytecode and find first/follows sets
+    /// Traverse AST node and emit bytecode
     ///
-    /// The first part of the work done by this method is to emit
-    /// bytecode for the Parsing Expression Grammars virtual machine.
+    /// Bytecode for the Parsing Expression Grammars virtual machine.
     /// This work is heavily based on the article "A Parsing Machine
     /// for PEGs" by S. Medeiros, et al.
-    ///
-    /// The second challenge that this method tackles is building the
-    /// follows sets.  Learn more about these sets in the article,
-    /// also by S. Medeiros, named "Syntax Error Recovery in Parsing
-    /// Expression Grammars".  But here's the rough idea:
-    ///
-    ///   follows(G[ε])       = {ε}                   ; empty
-    ///   follows(G[a])       = {ε}                   ; terminal
-    ///   follows(G[p1 / p2]) = {ε}                   ; ordered choice
-    ///   follows(G[A])       = first(G[P(A)])        ; non-terminal
-    ///   follows(G[p1 p2])   = first(p2)             ; sequence
-    ///   follows(G[p*])      = {ε}                   ; repetition
-    ///   follows(G[!p])      =
-    ///
-    ///   first(G[ε])       = {ε}                     ; empty
-    ///   first(G[a])       = {a}                     ; terminal
-    ///   first(G[A])       = first(G[P(A)])          ; non-terminal
-    ///   first(G[p1 p2])   = first(p1)               ; sequence
-    ///   first(G[p1 / p2]) = first(p1) ++ first(p2)  ; ordered choice
-    ///   first(G[p*])      = first(p)                ; repetition
-    ///   first(G[!p])      =
     ///
     /// The output of the compilation can be accessed via the
     /// `program()` method.
@@ -248,14 +214,8 @@ impl Compiler {
                 let addr = self.cursor;
                 let strid = self.push_string(name.clone());
                 self.identifiers.insert(addr, strid);
-
-                let n = format!("Definition {:?}", name);
-                self.pushfff(n.as_str());
                 self.compile(*expr)?;
                 self.emit(vm::Instruction::Return);
-
-                let firsts = self.popfff(n.as_str());
-                self.rules_firsts.insert(strid, firsts);
                 self.funcs.insert(
                     strid,
                     Fun {
@@ -283,20 +243,9 @@ impl Compiler {
                 Ok(())
             }
             AST::Sequence(seq) => {
-                self.indent("Seq");
-                for (i, s) in seq.into_iter().enumerate() {
-                    let pos = self.cursor;
-                    self.pushfff("SeqItem");
+                for s in seq {
                     self.compile(s)?;
-                    let firsts = self.popfff("SeqItem");
-                    if i == 0 {
-                        for f in firsts.clone() {
-                            self.add_first(f);
-                        }
-                    }
-                    self.follows.insert(pos, firsts);
                 }
-                self.dedent("Seq");
                 Ok(())
             }
             AST::Optional(op) => {
@@ -311,8 +260,6 @@ impl Compiler {
             AST::Choice(choices) => {
                 let (mut i, last_choice) = (0, choices.len() - 1);
                 let mut commits = vec![];
-
-                self.pushfff("Choice");
 
                 for choice in choices {
                     if i == last_choice {
@@ -331,13 +278,6 @@ impl Compiler {
                 for commit in commits {
                     self.code[commit] = vm::Instruction::Commit(self.cursor - commit);
                 }
-
-                let firsts = self.popfff("Choice");
-
-                for f in firsts {
-                    self.add_first(f);
-                }
-
                 Ok(())
             }
             AST::Not(expr) => {
@@ -373,13 +313,9 @@ impl Compiler {
                 match self.funcs.get(&id) {
                     Some(func) => {
                         let addr = self.cursor - func.addr;
-                        for f in self.rules_firsts[&id].clone() {
-                            self.add_first(f);
-                        }
                         self.emit(vm::Instruction::CallB(addr, 0));
                     }
                     None => {
-                        self.add_first(Token::Deferred(id));
                         self.addrs.insert(self.cursor, id);
                         self.emit(vm::Instruction::Call(0, 0));
                     }
@@ -396,7 +332,6 @@ impl Compiler {
                 let id = self.push_string(s);
                 self.emit(vm::Instruction::Str(id));
                 self.emit(vm::Instruction::Capture);
-                self.add_first(Token::StringID(id));
                 Ok(())
             }
             AST::Char(c) => {
@@ -414,61 +349,143 @@ impl Compiler {
     }
 
     fn emit(&mut self, instruction: vm::Instruction) {
-        self.prt(format!("emit {:?} {:?}", self.cursor, instruction).as_str());
+        debug!("emit {:?} {:?}", self.cursor, instruction);
         self.code.push(instruction);
         self.cursor += 1;
     }
+}
 
-    // Helpers for building the "firsts" sets
+/// Generic traversal for AST nodes, typed so it can be stored and
+/// passed around.  The compiler can then be parametrized to take
+/// different paths and execute different sets of transformation steps
+/// depending on the set of input flags.
+trait Traversal {
+    fn traverse(&mut self, ast: AST) -> Result<AST, Error>;
+}
 
-    fn pushfff(&mut self, msg: &str) {
-        self.indent(msg);
-        self.firsts.push(vec![]);
-    }
+#[derive(Clone, Debug)]
+pub enum Token {
+    // Deferred(usize),
+// StringID(usize),
+}
 
-    fn popfff(&mut self, msg: &str) -> Vec<Token> {
-        self.dedent(msg);
-        self.firsts.pop().unwrap()
-    }
+/// The Standard Algorithm takes a grammar G as input and outputs an
+/// augumented grammar G' automatically annotated with labeled
+/// failures.
+#[derive(Debug)]
+struct StandardAlgorithm {
+    stage1: Stage1,
+    firsts: HashMap<AST, Vec<Token>>,
+    follows: HashMap<usize, Vec<Token>>,
+    recovery: HashMap<usize, AST>,
+    nullable: HashMap<AST, bool>,
+    eat_tokens: AST,
+    last_label_id: usize,
+}
 
-    fn add_first(&mut self, first: Token) {
-        let l = self.firsts.len();
-        if l > 0 {
-            self.prt_token("first", &first);
-            self.firsts[l - 1].push(first);
+impl Traversal for StandardAlgorithm {
+    fn traverse(&mut self, ast: AST) -> Result<AST, Error> {
+        // traverse the AST once
+        self.stage1.run(&ast);
+
+        if !self.stage1.lexical_tokens.is_empty() {
+            self.eat_tokens = AST::Choice(self.stage1.lexical_tokens.clone());
         }
-    }
 
-    // Debugging helpers
-
-    fn prt(&mut self, msg: &str) {
-        debug!("{:indent$}{}", "", msg, indent = self.indent_level);
-    }
-
-    fn prt_token(&mut self, msg: &str, token: &Token) {
-        debug!(
-            "{:width$}{} {}",
-            "",
-            msg,
-            match token {
-                Token::Deferred(id) => format!("Deferred {:#?} {:?}", id, self.strings[*id]),
-                Token::StringID(id) => format!("StringID {:#?} {:?}", id, self.strings[*id]),
-            },
-            width = self.indent_level
-        );
-    }
-
-    fn indent(&mut self, msg: &str) {
-        debug!("{:width$}Open {}", "", msg, width = self.indent_level);
-        self.indent_level += 2;
-    }
-
-    fn dedent(&mut self, msg: &str) {
-        self.indent_level -= 2;
-        debug!("{:width$}Close {}", "", msg, width = self.indent_level);
+        // traverse the ast one last time, building the result AST
+        self.labelexp(ast)
     }
 }
 
+impl StandardAlgorithm {
+    fn new() -> Self {
+        // TODO: This hardcoded vector could come from configuration
+        // forwarded by the Compiler
+        let space_rules = vec!["Comment".to_string(), "Spacing".to_string()];
+
+        StandardAlgorithm {
+            stage1: Stage1::new_with_space_rules(space_rules),
+            firsts: HashMap::new(),
+            follows: HashMap::new(),
+            nullable: HashMap::new(),
+            recovery: HashMap::new(),
+            eat_tokens: AST::Empty,
+            last_label_id: 0,
+        }
+    }
+
+    fn labelexp(&self, node: AST) -> Result<AST, Error> {
+        match node {
+            AST::Grammar(rules) => Ok(AST::Grammar(
+                // recursive loop to resolve each Definition
+                rules
+                    .into_iter()
+                    .map(|item| self.labelexp(item))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            AST::Definition(name, expr) => {
+                // lexical rules don't get annotated
+                if self.stage1.is_lex_rule(&name) {
+                    Ok(AST::Definition(name, expr))
+                } else {
+                    Ok(self.labelexp_traverse(AST::Definition(name, expr), false)?)
+                }
+            }
+            n @ _ => Ok(n),
+        }
+    }
+
+    fn labelexp_traverse(&self, node: AST, seq: bool) -> Result<AST, Error> {
+        match node {
+            AST::Identifier(id) => {
+                Ok(AST::Identifier(id))
+            },
+            AST::Sequence(s) => Ok(AST::Sequence(
+                s.into_iter()
+                    .map(|item| self.labelexp_traverse(item, seq))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            AST::Choice(choices) => Ok(AST::Choice(
+                choices
+                    .into_iter()
+                    .map(|item| self.labelexp_traverse(item, seq))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            _ => Ok(node)
+            // AST::Not(expr) => Ok(AST::Not(expr)),
+            // AST::ZeroOrMore(expr) => Ok(AST::ZeroOrMore(Box::new(self.labelexp(*expr)?))),
+            // AST::OneOrMore(expr) => Ok(AST::OneOrMore(Box::new(self.labelexp(*expr)?))),
+            // AST::Identifier(name) => Ok(AST::Identifier(name)),
+            // AST::Range(a, b) => Ok(AST::Range(a, b)),
+            // AST::Str(s) => Ok(AST::Str(s)),
+            // AST::Char(c) => Ok(AST::Char(c)),
+            // AST::Any => Ok(AST::Any),
+        }
+    }
+
+    // fn calck(&self, p: AST, follows: Vec<Token>) -> Vec<Token> {
+    //     vec![]
+    // }
+
+    // fn new_label(&mut self) -> usize {
+    //     self.last_label_id += 1;
+    //     self.last_label_id
+    // }
+
+    // fn add_label(&mut self, p: AST, follows: Vec<Token>) -> AST {
+    //     let label_id = self.new_label();
+    //     self.recovery.insert(
+    //         label_id,
+    //         AST::ZeroOrMore(Box::new(AST::Sequence(vec![
+    //             // AST::Not(Box::new(follows.map(|_| AST::Str("_".to_string())))),
+    //             AST::Identifier("__eatToken__".to_string()),
+    //         ]))),
+    //     );
+    //     AST::Label(format!("label{}", label_id), Box::new(p))
+    // }
+}
+
+#[derive(Debug)]
 /// The first stage of the StandardAlgorithm
 ///
 /// This traversal collects following information:
@@ -504,8 +521,8 @@ impl Compiler {
 /// _ <- [ \t]*
 /// ```
 ///
-/// In the example above, the rule `T` would be not a lexical rule,
-/// but `D` and `_` wouldn't.  Although `D` does contain an identifier
+/// In the example above, the rule `T` would not be a lexical rule,
+/// but `D` and `_` would.  Although `D` does contain an identifier
 /// to another rule, is considered to be a lexical a because the
 /// identifier it contains points to a rule that is a space rule.
 struct Stage1 {
@@ -730,6 +747,88 @@ impl Stage1 {
             }
         }
     }
+}
+
+/// Taken from: On the relation between context-free grammars and
+/// parsing expression grammars
+///
+///   FIRST(p) = { a ∈ T | G[p] axy -> y } ∪ nullable(p)
+///   nullable(p) = {ε} if G[p] x -> x else ∅
+///
+///   FOLLOW(A) = { a ∈ T ∪ {$} | G[A] yaz -> az is in a proof tree for G w$ -> $ }
+///
+/// For an expression to be considered LL(1), it needs to follow
+/// these two rules:
+///
+///   1. FIRST(p1) ∩ FIRST(p2) = ∅;
+///   2. FIRST(p1) ∩ FOLLOW(A) = ∅ if ε ∈ FIRST(p2).
+///
+/// This is very important because conservative generation of labels
+/// is only guaranteed to work with LL(1) grammars the way it is right
+/// now.
+fn first(node: AST) -> Vec<AST> {
+    let mut first_items = if nullable(&node) {
+        vec![AST::Empty]
+    } else {
+        vec![]
+    };
+    first_items.append(
+        &mut match node {
+            AST::Choice(items) => {
+                if items.is_empty() {
+                    return vec![];
+                }
+                items.into_iter().map(first).flatten().collect::<Vec<AST>>()
+            }
+            AST::Sequence(items) => {
+                if items.is_empty() {
+                    vec![]
+                } else {
+                    vec![items[0].clone()]
+                }
+            }
+            AST::Identifier(id) => {
+                vec![]
+            }
+            _ => vec![node],
+        }
+        .clone(),
+    );
+
+    first_items
+}
+
+fn nullable(node: &AST) -> bool {
+    match node {
+        AST::Empty | AST::Not(..) | AST::Optional(..) | AST::ZeroOrMore(..) => true,
+        AST::OneOrMore(..) | AST::Any | AST::Str(..) | AST::Char(..) | AST::Range(..) => false,
+        AST::Sequence(items) => items.iter().all(nullable),
+        AST::Choice(items) => items.iter().any(nullable),
+        AST::Identifier(id) => false,
+        n => {
+            panic!("Cannot tell if node is nullable: {:?}", n);
+        }
+    }
+}
+
+fn defs(node: &AST) -> (HashMap<String, AST>, String) {
+    let mut map: HashMap<String, AST> = HashMap::new();
+    let mut first_rule = "".to_string();
+    let mut found_first = false;
+
+    if let AST::Grammar(rules) = node {
+        for rule in rules {
+            if let AST::Definition(name, def) = rule {
+                if !found_first {
+                    first_rule = name.to_string();
+                    found_first = true;
+                }
+                map.insert(name.to_string(), (**def).clone());
+            }
+        }
+    }
+
+    (map, first_rule)
 }
 
 #[derive(Debug)]
@@ -1241,6 +1340,34 @@ mod stage1_tests {
     use super::*;
 
     #[test]
+    fn a02() {
+        env_logger::init();
+        let grammar_text = "
+             A <- B C       # is_space: false, is_lex: false
+             B <- 'a'       # is_space: false, is_lex: true
+             C <- 'b'       # is_space: false, is_lex: true
+             D <- ' '       # is_space: true; literal space
+             E <- '\t'      # is_space: true; escaped tab
+             F <- '\n'      # is_space: true; escaped new line
+             G <- '\r'      # is_space: true; escaped carriage return
+             H <- ' ' G     # is_space: true; identifier points to a space rule
+             I <- ' ' '\t'  # is_space: true; sequence made only of literal spaces
+             J <- '\n'      # is_space: true; all options are literal space chars
+                / '\r\n'
+                / '\r'
+             K <- J+
+            ";
+        let grammar = Parser::new(grammar_text).parse_grammar().unwrap();
+
+        let (map, _) = defs(&grammar);
+
+        println!("WATAFUK {:#?}", first(map["K"].clone()));
+
+        // let mut stage1 = Stage1::new_with_space_rules(vec![]);
+        // stage1.run(&grammar);
+    }
+
+    #[test]
     fn a01() {
         let grammar_text = "
              A <- B C       # is_space: false, is_lex: false
@@ -1276,7 +1403,8 @@ mod stage1_tests {
             lexical_rules
         );
 
-        let mut space_rules = stage1.rule_is_space
+        let mut space_rules = stage1
+            .rule_is_space
             .iter()
             .filter_map(|(k, v)| if *v == Some(true) { Some(k) } else { None })
             .collect::<Vec<_>>();
@@ -1325,8 +1453,89 @@ mod tests {
     }
 
     #[test]
+    fn follows_arith_01() {
+        let mut c = Compiler::default();
+        let out = c.compile_str(
+            "
+            assign  <- name eq expr^exas sm
+            expr    <- op expr cl
+                     / decimal expl
+            expl    <- '*' expr^ex
+                     / '/' expr^ex
+                     / '+' expr^ex
+                     / '-' expr^ex
+                     / # Empty needed here
+
+            decimal <- [0-9]+ _
+            name    <- [a-zA-Z_][a-zA-Z0-9_]* _
+            eq      <- '=' _
+            sm      <- ';' _
+            op      <- '(' _
+            cl      <- ')' _
+
+            _       <- ws*
+            ws      <- eol / sp
+            sp      <- [ \t]
+            eol     <- '\n' / '\r\n' / '\r'
+            ",
+        );
+        assert!(out.is_ok());
+        let p = c.program();
+        println!("{}", p);
+        let mut v = vm::VM::new(p);
+
+        // test cases
+
+        // - label=exas,follows=["(", "[0-9]"],reason=missing expr
+        //   `blah = `
+
+        // - label=,follows=[";"],reason=missing semicolon
+        //   `blah = 0`
+
+        // - label=,follows=[],reason=
+        // - label=,follows=[],reason=
+        // - label=,follows=[],reason=
+        // - label=,follows=[],reason=
+
+        let result = v.run("foo = 0;");
+        println!("REZULLLTZ: {:#?}", result);
+    }
+
+    #[test]
+    fn follows_arith_02_lr() {
+        let mut c = Compiler::default();
+        let out = c.compile_str(
+            "
+            assign  <- name eq expr sm
+            expr    <- expr:1 '+' expr:2
+                     / expr:1 '-' expr:2
+                     / expr:2 '*' expr:3
+                     / expr:2 '/' expr:3
+                     / expr:3 '**' expr:3
+                     / '-' expr:4
+                     / op expr:1 clk
+                     / decimal
+
+            decimal <- [0-9]+ _
+            name    <- [a-zA-Z_][a-zA-Z0-9_]* _
+            eq      <- '=' _
+            sm      <- ';' _
+            op      <- '(' _
+            cl      <- ')' _
+            _       <- [ \t\n\r]*
+            ",
+        );
+        assert!(out.is_ok());
+        let p = c.program();
+        println!("{}", p);
+        let mut v = vm::VM::new(p);
+        let result = v.run("a = 3+");
+        println!("REZULLLTZ: {:#?}", result);
+    }
+
+    #[test]
     fn follows_1() {
-        let mut c = Compiler::new();
+        let mut c = Compiler::default();
         let out = c.compile_str(
             "
             A <- 'a'
@@ -1395,7 +1604,7 @@ mod tests {
 
     #[test]
     fn follows_2() {
-        let mut c = Compiler::new();
+        let mut c = Compiler::default();
         let out = c.compile_str(
             "
             A <- B / C

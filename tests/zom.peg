@@ -1,7 +1,7 @@
 # Execute `cargo run -- shell` and try this out
-Value <- SP
+Value <- SP / HexNum / Emoji+ / label
 
-SP <- '\\20'
+SP <- '\"stuff'
 
 # Read hex numbers.  The label hexDigit is there to say that if the
 # parser sees 0x, it MUST then succeed parsing the expression that

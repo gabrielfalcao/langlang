@@ -43,10 +43,10 @@ impl From<vm::Error> for ShellError {
 
 fn shell() -> Result<(), ShellError> {
     println!("welcome to langlang. use Ctrl-D to get outta here.");
-
-    let data = fs::read_to_string("/home/lincoln/src/github.com/clarete/langlang/lib/abnf.peg")?;
+    let grammar_file = std::env::args().nth(2).expect("no grammar given");
+    let data = fs::read_to_string(grammar_file)?;
     println!("Text:\n{}", data);
-    let mut c = parser::Compiler::new();
+    let mut c = parser::Compiler::new_with_config(parser::Config::new_with_standard_errlabels());
     c.compile_str(data.as_str())?;
     let p = c.program();
 
@@ -87,7 +87,7 @@ fn shell() -> Result<(), ShellError> {
 
 fn run_grammar_on_input(grammar_file: &str, input_file: &str) -> Result<(), ShellError> {
     let grammar_data = fs::read_to_string(grammar_file)?;
-    let mut c = parser::Compiler::new();
+    let mut c = parser::Compiler::new_with_config(parser::Config::new_with_standard_errlabels());
     c.compile_str(grammar_data.as_str())?;
     let p = c.program();
     println!("{}", p.to_string());
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn throw_1_not() {
-        let mut c = parser::Compiler::new();
+        let mut c = parser::Compiler::default();
         // The label `l` is being used within a not predicate, so it
         // should behave like a regular `fail` level.
         c.compile_str(
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn throw_2_not() {
-        let mut c = parser::Compiler::new();
+        let mut c = parser::Compiler::default();
         // first label `l` is thrown from within a not predicate, but
         // then it will try to match the input that doesn't have what
         // it wants and must throw an error out side the not predicate
@@ -175,6 +175,9 @@ mod tests {
         let mut v = vm::VM::new(c.program());
         let result = v.run("aac");
         assert!(result.is_err());
-        assert_eq!(Err(vm::Error::Matching(2, "foo".to_string())), result);
+        assert_eq!(
+            Err(vm::Error::Matching(2, "foo".to_string(), vec![])),
+            result
+        );
     }
 }

@@ -51,9 +51,9 @@ pub enum Error {
     LeftRec,
     Overflow,
     // Error matching the input (ffp, expected)
-    Matching(usize, String),
+    Matching(usize, String, Vec<String>),
     // End of file
-    EOF,
+    EOF(Vec<String>),
 }
 
 #[derive(Clone, Debug)]
@@ -84,7 +84,6 @@ pub struct Program {
 impl Program {
     pub fn new(
         identifiers: HashMap<usize, usize>,
-        follows: HashMap<usize, Vec<usize>>,
         labels: HashMap<usize, usize>,
         recovery: HashMap<usize, usize>,
         strings: Vec<String>,
@@ -92,7 +91,7 @@ impl Program {
     ) -> Self {
         Program {
             identifiers,
-            follows,
+            follows: HashMap::new(),
             labels,
             recovery,
             strings,
@@ -115,15 +114,9 @@ impl Program {
     }
 
     pub fn expected(&self, address: usize) -> Vec<String> {
-        // println!("EXPECTED requested: {:?}", address);
         match self.follows.get(&address) {
             None => vec![],
-            Some(ids) => {
-                let stuff = ids.iter().map(|id| self.string_at(*id)).collect();
-                // println!("   IDSSS: {:?}", ids);
-                // println!("   STUFF: {:?}", stuff);
-                stuff
-            },
+            Some(ids) => ids.iter().map(|id| self.string_at(*id)).collect(),
         }
     }
 
@@ -136,11 +129,21 @@ impl std::fmt::Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         writeln!(f, "Labels: {:#?}", self.labels)?;
         writeln!(f, "Strings: {:#?}", self.strings)?;
-        writeln!(f, "Follows: {:#?}", self.follows)?;
+        writeln!(f, "Follows:")?;
+        for (position, strings) in &self.follows {
+            write!(f, "    {:#03}: ", position)?;
+            for (i, s) in strings.iter().enumerate() {
+                write!(f, "\"{}\"", self.string_at(*s))?;
+                if i < strings.len() - 1 {
+                    write!(f, ", ")?;
+                }
+            }
+            writeln!(f, "")?;
+        }
 
+        writeln!(f, "Code:")?;
         for (i, instruction) in self.code.iter().enumerate() {
-            write!(f, "{:#03} ", i)?;
-
+            write!(f, "    {:#03}: ", i)?;
             match instruction {
                 Instruction::Halt => writeln!(f, "halt"),
                 Instruction::Any => writeln!(f, "any"),
@@ -276,7 +279,7 @@ pub struct VM {
     // Where value returned from successful match operation is stored
     accumulator: Option<Value>,
     // Set of tokens that are displayed as expected upon error
-    expected: Vec<usize>,
+    expected_stack: Vec<Vec<String>>,
     // Error log contains all errors captured during recovery.  It is
     // a vector containing pairs made of the label recovered and the
     // position in the cursor where it started
@@ -297,7 +300,7 @@ impl VM {
             call_frames: vec![],
             lrmemo: HashMap::new(),
             accumulator: None,
-            expected: vec![],
+            expected_stack: vec![],
             error_log: vec![],
             within_predicate: false,
         }
@@ -375,15 +378,17 @@ impl VM {
                 Err(_) => (Instruction::Fail, 0),
             };
 
-            debug!("[{:?},{:?}] I: {:?}", self.program_counter, cursor, instruction);
-
-            // if let Some(expected)
+            debug!(
+                "[{:?},{:?}] I: {:?}",
+                self.program_counter, cursor, instruction
+            );
 
             match instruction {
                 Instruction::Halt => break,
                 Instruction::Any => {
                     if cursor >= self.source.len() {
-                        self.cursor = Err(Error::EOF);
+                        let follows = self.program.expected(self.program_counter);
+                        self.cursor = Err(Error::EOF(follows));
                     } else {
                         self.accumulator = Some(Value::Chr(self.source[cursor]));
                         self.advance_cursor()?;
@@ -392,13 +397,14 @@ impl VM {
                 }
                 Instruction::Char(expected) => {
                     if cursor >= self.source.len() {
-                        self.cursor = Err(Error::EOF);
+                        let follows = self.program.expected(self.program_counter);
+                        self.cursor = Err(Error::EOF(follows));
                         continue;
                     }
                     let current = self.source[cursor];
                     if current != expected {
-                        // println!("OIA PROCE VE FI: {:?}", self.program.expected(self.program_counter));
-                        self.cursor = Err(Error::Matching(self.ffp, expected.to_string()));
+                        let follows = self.program.expected(self.program_counter);
+                        self.cursor = Err(Error::Matching(self.ffp, expected.to_string(), follows));
                         continue;
                     }
                     self.accumulator = Some(Value::Chr(self.source[cursor]));
@@ -407,18 +413,23 @@ impl VM {
                 }
                 Instruction::Span(start, end) => {
                     if cursor >= self.source.len() {
-                        self.cursor = Err(Error::EOF);
+                        let follows = self.program.expected(self.program_counter);
+                        self.cursor = Err(Error::EOF(follows));
                         continue;
                     }
                     let current = self.source[cursor];
                     if current >= start && current <= end {
                         self.accumulator = Some(Value::Chr(self.source[cursor]));
                         self.advance_cursor()?;
-                        self.program_counter += 1;
-                        continue;
+                    } else {
+                        let follows = self.program.expected(self.program_counter);
+                        self.cursor = Err(Error::Matching(
+                            self.ffp,
+                            format!("[{}-{}]", start, end),
+                            follows,
+                        ));
                     }
-                    // println!("OIA PROCE VE FI: {:?}", self.program.expected(self.program_counter));
-                    self.cursor = Err(Error::Matching(self.ffp, format!("[{}-{}]", start, end)));
+                    self.program_counter += 1;
                 }
                 Instruction::Str(id) => {
                     let s = self.program.string_at(id);
@@ -437,8 +448,8 @@ impl VM {
                     if matches == s.len() {
                         self.accumulator = Some(Value::Str(s));
                     } else {
-                        // println!("STR OIA PROCE VE FI: {:?}", self.program_counter);
-                        self.cursor = Err(Error::Matching(self.ffp, s));
+                        let follows = self.program.expected(self.program_counter);
+                        self.cursor = Err(Error::Matching(self.ffp, s, follows));
                     }
                     self.program_counter += 1;
                 }
@@ -491,8 +502,12 @@ impl VM {
                     } else {
                         let message = self.program.label(label);
                         match self.program.recovery.get(&label) {
-                            None => return Err(Error::Matching(self.ffp, message)),
                             Some(addr) => self.program_counter = *addr,
+                            None => {
+                                let expected = self.expected_stack.pop().unwrap_or(vec![]);
+                                println!("What we didn't tell you: {:?}", self.expected_stack);
+                                return Err(Error::Matching(self.ffp, message, expected));
+                            }
                         }
                     }
                 }
@@ -509,8 +524,15 @@ impl VM {
     }
 
     fn inst_call(&mut self, address: usize, precedence: usize) -> Result<(), Error> {
-        debug!("       . call({:?})", self.program.identifier(address));
+        debug!(
+            "       . call({:?}@{:?})",
+            self.program.identifier(address),
+            address
+        );
         let cursor = self.cursor.clone()?;
+        self.expected_stack
+            .push(self.program.expected(self.program_counter));
+
         if precedence == 0 {
             self.stkpush(StackFrame::new_call(
                 self.program_counter + 1,
@@ -561,6 +583,7 @@ impl VM {
     }
 
     fn inst_return(&mut self) -> Result<(), Error> {
+        self.expected_stack.pop();
         let cursor = self.cursor.clone()?;
         let mut frame = self.stkpeek()?;
         let address = frame.address;
@@ -612,7 +635,6 @@ impl VM {
             Err(e) => e,
             Ok(_) => Error::Fail,
         };
-        //println!("FAIA OIA PROCE VE FI: {:?}", self.program_counter);
         let frame = loop {
             debug!("       . pop");
             match self.stack.pop() {
@@ -716,7 +738,10 @@ mod tests {
         let result = vm.run("b");
 
         assert!(result.is_err());
-        assert_eq!(Error::Matching(0, "a".to_string()), result.unwrap_err());
+        assert_eq!(
+            Error::Matching(0, "a".to_string(), vec![]),
+            result.unwrap_err()
+        );
     }
 
     // (span.1)
@@ -775,7 +800,10 @@ mod tests {
         let result = vm.run("9");
 
         assert!(result.is_err());
-        assert_eq!(Error::Matching(0, "[a-z]".to_string()), result.unwrap_err());
+        assert_eq!(
+            Error::Matching(0, "[a-z]".to_string(), vec![]),
+            result.unwrap_err()
+        );
     }
 
     // (any.1)
@@ -832,7 +860,7 @@ mod tests {
         let result = vm.run("");
 
         assert!(result.is_err());
-        assert_eq!(Error::EOF, result.clone().unwrap_err());
+        assert_eq!(Error::EOF(vec![]), result.clone().unwrap_err());
         assert!(vm.cursor.is_err());
         //assert_eq!(vm.cursor.unwrap_err(), result.unwrap_err())
     }
@@ -933,7 +961,10 @@ mod tests {
 
         assert!(result.is_err());
         // currently shows the last error
-        assert_eq!(Error::Matching(0, "b".to_string()), result.unwrap_err());
+        assert_eq!(
+            Error::Matching(0, "b".to_string(), vec![]),
+            result.unwrap_err()
+        );
     }
 
     // (ord.2)
@@ -1144,7 +1175,10 @@ mod tests {
         let result = vm.run("1+2");
 
         assert!(result.is_err());
-        assert_eq!(Error::Matching(2, "1".to_string()), result.unwrap_err());
+        assert_eq!(
+            Error::Matching(2, "1".to_string(), vec![]),
+            result.unwrap_err()
+        );
     }
 
     #[test]
@@ -1336,7 +1370,7 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            Error::Matching(1, "Not really b".to_string()),
+            Error::Matching(1, "Not really b".to_string(), vec![]),
             result.unwrap_err()
         );
         assert_eq!(Vec::<(usize, usize)>::new(), vm.error_log);
@@ -1396,7 +1430,7 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            Error::Matching(5, "abacate".to_string()),
+            Error::Matching(5, "abacate".to_string(), vec![]),
             result.unwrap_err(),
         );
     }
