@@ -3,48 +3,17 @@ use std::boxed::Box;
 use std::collections::HashMap;
 
 use crate::vm;
+use crate::ast::AST;
 
 #[derive(Debug)]
-pub struct Location {
-    // how many characters have been seen since the begining of
-    // parsing
-    cursor: usize,
-    // how many end-of-line sequences seen since the begining of
-    // parsing
-    line: usize,
-    // how many characters seen since the begining of the line
-    column: usize,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq)]
-pub enum AST {
-    Grammar(Vec<AST>),
-    Definition(String, Box<AST>),
-    LabelDefinition(String, String),
-    Sequence(Vec<AST>),
-    Choice(Vec<AST>),
-    Not(Box<AST>),
-    Optional(Box<AST>),
-    ZeroOrMore(Box<AST>),
-    OneOrMore(Box<AST>),
-    Identifier(String),
-    Str(String),
-    Range(char, char),
-    Char(char),
-    Label(String, Box<AST>),
-    Any,
-    Empty,
-}
-
-#[derive(Debug)]
-pub struct Fun {
+struct Fun {
     name: String,
     addr: usize,
     size: usize,
 }
 
 #[derive(Clone, Debug)]
-pub enum Token {
+enum Token {
     Deferred(usize),
     StringID(usize),
 }
@@ -120,8 +89,8 @@ impl Compiler {
     /// emit the code, and then backpatching both call sites and
     /// follows sets deferred during the code main generation pass.
     pub fn compile_str(&mut self, s: &str) -> Result<(), Error> {
-        let mut p = Parser::new(s);
-        self.compile(p.parse_grammar()?)?;
+        let mut p = Parser::new(s, "".to_string());
+        self.compile(p.parse()?)?;
         self.backpatch_callsites()?;
         self.backpatch_follows();
         Ok(())
@@ -236,22 +205,38 @@ impl Compiler {
     /// `program()` method.
     fn compile(&mut self, node: AST) -> Result<(), Error> {
         match node {
-            AST::Grammar(rules) => {
-                self.emit(vm::Instruction::Call(2, 0));
-                self.emit(vm::Instruction::Halt);
-                for r in rules {
+            // AST::Grammar(rules) => {
+            //     self.emit(vm::Instruction::Call(2, 0));
+            //     self.emit(vm::Instruction::Halt);
+            //     for r in rules {
+            //         self.compile(r)?;
+            //     }
+            //     Ok(())
+            // }
+            AST::Module {
+                filename,
+                aliases,
+                definitions,
+            } => Ok(()),
+            AST::Lang {
+                name,
+                aliases,
+                rules,
+            } => {
+                for (_, r) in rules {
                     self.compile(r)?;
                 }
                 Ok(())
             }
-            AST::Definition(name, expr) => {
+            AST::Alias(path) => Ok(()),
+            AST::Rule { name, expression } => {
                 let addr = self.cursor;
                 let strid = self.push_string(name.clone());
                 self.identifiers.insert(addr, strid);
 
                 let n = format!("Definition {:?}", name);
                 self.pushfff(n.as_str());
-                self.compile(*expr)?;
+                self.compile(*expression)?;
                 self.emit(vm::Instruction::Return);
 
                 let firsts = self.popfff(n.as_str());
@@ -266,7 +251,7 @@ impl Compiler {
                 );
                 Ok(())
             }
-            AST::LabelDefinition(name, message) => {
+            AST::LabelDef { name, message } => {
                 let name_id = self.push_string(name);
                 let message_id = self.push_string(message);
                 self.labels.insert(name_id, message_id);
@@ -469,268 +454,268 @@ impl Compiler {
     }
 }
 
-/// The first stage of the StandardAlgorithm
-///
-/// This traversal collects following information:
-///
-/// 1. all the AST nodes with matchers for recognizable terminals
-/// (`Char`, `Str`, and `Range`).  That's used for building the
-/// `eatToken` expression.
-///
-/// 2. the names of rules that match exclusively white space
-/// characters or call out identifiers of other rules that match
-/// exclusively white spaces. e.g.:
-///
-/// ```
-/// _   <- ws*
-/// ws  <- eol / sp
-/// eol <- '\n' / '\r\n' / '\r'
-/// sp  <- [ \t]
-/// ```
-///
-/// All the rules above would appear in the result of this function as
-/// space rules.  The rules `_` and `ws` are examples of rules that
-/// contain identifiers, but are still considered space rules because
-/// the identifiers they call out to are rules that only match space
-/// characters (`eol` and `sp`).
-///
-/// 3. the names of rules that contain expressions that match
-/// syntatical structure. Notice that space rules don't ever appear on
-/// this list. e.g.:
-///
-/// ```
-/// T <- D "+" D / D "-" D
-/// D <- [0-9]+ _
-/// _ <- [ \t]*
-/// ```
-///
-/// In the example above, the rule `T` would be not a lexical rule,
-/// but `D` and `_` wouldn't.  Although `D` does contain an identifier
-/// to another rule, is considered to be a lexical a because the
-/// identifier it contains points to a rule that is a space rule.
-struct Stage1 {
-    definition_names: Vec<String>,
+// /// The first stage of the StandardAlgorithm
+// ///
+// /// This traversal collects following information:
+// ///
+// /// 1. all the AST nodes with matchers for recognizable terminals
+// /// (`Char`, `Str`, and `Range`).  That's used for building the
+// /// `eatToken` expression.
+// ///
+// /// 2. the names of rules that match exclusively white space
+// /// characters or call out identifiers of other rules that match
+// /// exclusively white spaces. e.g.:
+// ///
+// /// ```
+// /// _   <- ws*
+// /// ws  <- eol / sp
+// /// eol <- '\n' / '\r\n' / '\r'
+// /// sp  <- [ \t]
+// /// ```
+// ///
+// /// All the rules above would appear in the result of this function as
+// /// space rules.  The rules `_` and `ws` are examples of rules that
+// /// contain identifiers, but are still considered space rules because
+// /// the identifiers they call out to are rules that only match space
+// /// characters (`eol` and `sp`).
+// ///
+// /// 3. the names of rules that contain expressions that match
+// /// syntatical structure. Notice that space rules don't ever appear on
+// /// this list. e.g.:
+// ///
+// /// ```
+// /// T <- D "+" D / D "-" D
+// /// D <- [0-9]+ _
+// /// _ <- [ \t]*
+// /// ```
+// ///
+// /// In the example above, the rule `T` would be not a lexical rule,
+// /// but `D` and `_` wouldn't.  Although `D` does contain an identifier
+// /// to another rule, is considered to be a lexical a because the
+// /// identifier it contains points to a rule that is a space rule.
+// struct Stage1 {
+//     definition_names: Vec<String>,
 
-    // stack for Identifiers that haven't had their status resolved
-    unknown_ids_stk: Vec<Vec<String>>,
+//     // stack for Identifiers that haven't had their status resolved
+//     unknown_ids_stk: Vec<Vec<String>>,
 
-    // state for finding rules that match whitespace chars only
-    rule_is_space: HashMap<String, Option<bool>>,
-    unknown_space_ids: HashMap<String, Vec<String>>,
+//     // state for finding rules that match whitespace chars only
+//     rule_is_space: HashMap<String, Option<bool>>,
+//     unknown_space_ids: HashMap<String, Vec<String>>,
 
-    // state for finding lexical rules
-    rule_is_lexical: HashMap<String, Option<bool>>,
-    unknown_lexical_ids: HashMap<String, Vec<String>>,
+//     // state for finding lexical rules
+//     rule_is_lexical: HashMap<String, Option<bool>>,
+//     unknown_lexical_ids: HashMap<String, Vec<String>>,
 
-    // state for eatToken
-    lexical_tokens: Vec<AST>,
-}
+//     // state for eatToken
+//     lexical_tokens: Vec<AST>,
+// }
 
-impl Stage1 {
-    fn new_with_space_rules(space_rules: Vec<String>) -> Self {
-        let mut rule_is_space = HashMap::new();
+// impl Stage1 {
+//     fn new_with_space_rules(space_rules: Vec<String>) -> Self {
+//         let mut rule_is_space = HashMap::new();
 
-        for s in &space_rules {
-            rule_is_space.insert(s.clone(), Some(true));
-        }
+//         for s in &space_rules {
+//             rule_is_space.insert(s.clone(), Some(true));
+//         }
 
-        Self {
-            definition_names: vec![],
-            unknown_ids_stk: vec![],
-            rule_is_space,
-            unknown_space_ids: HashMap::new(),
-            rule_is_lexical: HashMap::new(),
-            unknown_lexical_ids: HashMap::new(),
-            lexical_tokens: vec![],
-        }
-    }
+//         Self {
+//             definition_names: vec![],
+//             unknown_ids_stk: vec![],
+//             rule_is_space,
+//             unknown_space_ids: HashMap::new(),
+//             rule_is_lexical: HashMap::new(),
+//             unknown_lexical_ids: HashMap::new(),
+//             lexical_tokens: vec![],
+//         }
+//     }
 
-    fn is_space_rule(&self, name: &String) -> bool {
-        match self.rule_is_space.get(name) {
-            Some(Some(true)) => self.definition_names.contains(name),
-            _ => false,
-        }
-    }
+//     fn is_space_rule(&self, name: &String) -> bool {
+//         match self.rule_is_space.get(name) {
+//             Some(Some(true)) => self.definition_names.contains(name),
+//             _ => false,
+//         }
+//     }
 
-    fn is_lex_rule(&self, name: &str) -> bool {
-        match self.rule_is_lexical.get(name) {
-            Some(Some(is_space)) => *is_space,
-            _ => false,
-        }
-    }
+//     fn is_lex_rule(&self, name: &str) -> bool {
+//         match self.rule_is_lexical.get(name) {
+//             Some(Some(is_space)) => *is_space,
+//             _ => false,
+//         }
+//     }
 
-    fn run(&mut self, node: &AST) {
-        self.traverse(node);
-    }
+//     fn run(&mut self, node: &AST) {
+//         self.traverse(node);
+//     }
 
-    fn traverse(
-        &mut self,
-        node: &AST,
-    ) -> (
-        Option<bool>, /* is_space */
-        Option<bool>, /* is_lex */
-    ) {
-        match node {
-            // doesn't matter
-            AST::LabelDefinition(..) => (None, None),
-            // not spaces
-            AST::Any | AST::Empty => (None, Some(true)),
-            // identifiers are a special case for space rules
-            AST::Identifier(id) => match self.rule_is_space.get(id) {
-                // if it's a known identifier that points to a space rule, that implies
-                // that it's a lexical rule too
-                Some(Some(true)) => (Some(true), Some(true)),
-                // if it's known to not point to a space rule, also forward the space status
-                Some(Some(false)) => (Some(false), Some(false)),
-                // otherwise, add the identifier to the ones that must be checked later
-                Some(None) | None => {
-                    self.unknown_ids_stk.last_mut().unwrap().push(id.clone());
-                    (None, None)
-                }
-            },
-            // forwards
-            AST::Not(e) => self.traverse(e),
-            AST::Label(_, e) => self.traverse(e),
-            AST::Optional(e) | AST::ZeroOrMore(e) | AST::OneOrMore(e) => self.traverse(e),
-            // specialized
-            AST::Grammar(ev) => {
-                ev.into_iter().for_each(|e| {
-                    self.traverse(e);
-                });
+//     fn traverse(
+//         &mut self,
+//         node: &AST,
+//     ) -> (
+//         Option<bool>, /* is_space */
+//         Option<bool>, /* is_lex */
+//     ) {
+//         match node {
+//             // doesn't matter
+//             AST::LabelDefinition(..) => (None, None),
+//             // not spaces
+//             AST::Any | AST::Empty => (None, Some(true)),
+//             // identifiers are a special case for space rules
+//             AST::Identifier(id) => match self.rule_is_space.get(id) {
+//                 // if it's a known identifier that points to a space rule, that implies
+//                 // that it's a lexical rule too
+//                 Some(Some(true)) => (Some(true), Some(true)),
+//                 // if it's known to not point to a space rule, also forward the space status
+//                 Some(Some(false)) => (Some(false), Some(false)),
+//                 // otherwise, add the identifier to the ones that must be checked later
+//                 Some(None) | None => {
+//                     self.unknown_ids_stk.last_mut().unwrap().push(id.clone());
+//                     (None, None)
+//                 }
+//             },
+//             // forwards
+//             AST::Not(e) => self.traverse(e),
+//             AST::Label(_, e) => self.traverse(e),
+//             AST::Optional(e) | AST::ZeroOrMore(e) | AST::OneOrMore(e) => self.traverse(e),
+//             // specialized
+//             AST::Grammar(ev) => {
+//                 ev.into_iter().for_each(|e| {
+//                     self.traverse(e);
+//                 });
 
-                // Find all symbols that are themselves rules with only spaces
-                loop {
-                    let mut has_change = false;
+//                 // Find all symbols that are themselves rules with only spaces
+//                 loop {
+//                     let mut has_change = false;
 
-                    // find definitions that are still worth looking into
-                    let mut maybe_rules = self.rule_is_space.clone();
-                    maybe_rules.retain(|_, v| *v == None);
+//                     // find definitions that are still worth looking into
+//                     let mut maybe_rules = self.rule_is_space.clone();
+//                     maybe_rules.retain(|_, v| *v == None);
 
-                    for rule in maybe_rules.keys() {
-                        // if all the unknown IDs were already resolved and it has been resolved
-                        // into a space rule, then we mark the `rule` itself as a space rule.
-                        if self.unknown_space_ids[rule]
-                            .iter()
-                            .all(|id| self.rule_is_space[id] == Some(true))
-                        {
-                            self.rule_is_space.insert(rule.to_string(), Some(true));
-                            // knowing for sure that a rule only matches spaces, also confirms
-                            // that it is a lexical rule
-                            self.rule_is_lexical.insert(rule.to_string(), Some(true));
-                            has_change = true;
-                        }
-                    }
-                    if !has_change {
-                        break;
-                    }
-                }
+//                     for rule in maybe_rules.keys() {
+//                         // if all the unknown IDs were already resolved and it has been resolved
+//                         // into a space rule, then we mark the `rule` itself as a space rule.
+//                         if self.unknown_space_ids[rule]
+//                             .iter()
+//                             .all(|id| self.rule_is_space[id] == Some(true))
+//                         {
+//                             self.rule_is_space.insert(rule.to_string(), Some(true));
+//                             // knowing for sure that a rule only matches spaces, also confirms
+//                             // that it is a lexical rule
+//                             self.rule_is_lexical.insert(rule.to_string(), Some(true));
+//                             has_change = true;
+//                         }
+//                     }
+//                     if !has_change {
+//                         break;
+//                     }
+//                 }
 
-                loop {
-                    let mut has_change = false;
+//                 loop {
+//                     let mut has_change = false;
 
-                    // find all rules that we're still uncertain about
-                    let mut maybe_rules = self.rule_is_lexical.clone();
-                    maybe_rules.retain(|_, v| *v == None);
+//                     // find all rules that we're still uncertain about
+//                     let mut maybe_rules = self.rule_is_lexical.clone();
+//                     maybe_rules.retain(|_, v| *v == None);
 
-                    for rule in maybe_rules.keys() {
-                        if self.unknown_lexical_ids[rule]
-                            .iter()
-                            .all(|id| self.rule_is_space[id] == Some(true))
-                        {
-                            self.rule_is_lexical.insert(rule.to_string(), Some(true));
-                            has_change = true;
-                        }
-                    }
-                    if !has_change {
-                        break;
-                    }
-                }
-                (Some(false), Some(false))
-            }
-            AST::Definition(def, expr) => {
-                self.definition_names.push(def.clone());
+//                     for rule in maybe_rules.keys() {
+//                         if self.unknown_lexical_ids[rule]
+//                             .iter()
+//                             .all(|id| self.rule_is_space[id] == Some(true))
+//                         {
+//                             self.rule_is_lexical.insert(rule.to_string(), Some(true));
+//                             has_change = true;
+//                         }
+//                     }
+//                     if !has_change {
+//                         break;
+//                     }
+//                 }
+//                 (Some(false), Some(false))
+//             }
+//             AST::Definition(def, expr) => {
+//                 self.definition_names.push(def.clone());
 
-                // collect identifiers of rules that we're unsure if they're space rules or not
-                self.unknown_ids_stk.push(vec![]);
-                let (is_space, mut is_lex) = self.traverse(expr);
-                let unknown_identifiers = self.unknown_ids_stk.pop().unwrap_or(vec![]);
+//                 // collect identifiers of rules that we're unsure if they're space rules or not
+//                 self.unknown_ids_stk.push(vec![]);
+//                 let (is_space, mut is_lex) = self.traverse(expr);
+//                 let unknown_identifiers = self.unknown_ids_stk.pop().unwrap_or(vec![]);
 
-                // Don't override possibly pre-loaded names in this table
-                match self.rule_is_space.get(def) {
-                    None => {
-                        self.rule_is_space.insert(def.clone(), is_space.clone());
-                    }
-                    _ => {}
-                }
+//                 // Don't override possibly pre-loaded names in this table
+//                 match self.rule_is_space.get(def) {
+//                     None => {
+//                         self.rule_is_space.insert(def.clone(), is_space.clone());
+//                     }
+//                     _ => {}
+//                 }
 
-                match is_space {
-                    Some(false) => {}
-                    Some(true) => {
-                        // if a rule contains only spaces, we can tell right away that it is a
-                        // lexical rule.  This allows us to save some work when patching.
-                        is_lex = Some(true);
-                    }
-                    None => {
-                        self.unknown_space_ids
-                            .insert(def.clone(), unknown_identifiers.clone());
-                    }
-                }
+//                 match is_space {
+//                     Some(false) => {}
+//                     Some(true) => {
+//                         // if a rule contains only spaces, we can tell right away that it is a
+//                         // lexical rule.  This allows us to save some work when patching.
+//                         is_lex = Some(true);
+//                     }
+//                     None => {
+//                         self.unknown_space_ids
+//                             .insert(def.clone(), unknown_identifiers.clone());
+//                     }
+//                 }
 
-                self.rule_is_lexical.insert(def.clone(), is_lex.clone());
-                if !is_lex.is_some() {
-                    self.unknown_lexical_ids
-                        .insert(def.clone(), unknown_identifiers);
-                }
-                (is_space, is_lex)
-            }
-            AST::Sequence(exprs) | AST::Choice(exprs) => {
-                let (mut all_spaces, mut all_lex) = (Some(true), Some(true));
-                for expr in exprs {
-                    let (is_space, is_lex) = self.traverse(expr);
-                    all_spaces = match (is_space, all_spaces) {
-                        (Some(true), Some(true)) => Some(true),
-                        (Some(true) | None, Some(true) | None) => None,
-                        _ => Some(false),
-                    };
-                    all_lex = match (is_lex, all_lex) {
-                        (Some(true), Some(true)) => Some(true),
-                        (Some(false), Some(false)) => Some(false),
-                        (None, _) | (_, None) => None,
-                        (Some(true), Some(false)) | (Some(false), Some(true)) => Some(true),
-                    };
-                }
-                (all_spaces, all_lex)
-            }
-            AST::Range(a, b) => {
-                self.lexical_tokens.push(AST::Range(*a, *b));
-                let is_space = if char::is_whitespace(*a) && char::is_whitespace(*b) {
-                    Some(true)
-                } else {
-                    Some(false)
-                };
-                (is_space, Some(true))
-            }
-            AST::Str(st) => {
-                self.lexical_tokens.push(AST::Str(st.clone()));
-                let is_space = if st.chars().all(|s| char::is_whitespace(s)) {
-                    Some(true)
-                } else {
-                    Some(false)
-                };
-                (is_space, Some(true))
-            }
-            AST::Char(c) => {
-                self.lexical_tokens.push(AST::Char(*c));
-                let is_space = if char::is_whitespace(*c) {
-                    Some(true)
-                } else {
-                    Some(false)
-                };
-                (is_space, Some(true))
-            }
-        }
-    }
-}
+//                 self.rule_is_lexical.insert(def.clone(), is_lex.clone());
+//                 if !is_lex.is_some() {
+//                     self.unknown_lexical_ids
+//                         .insert(def.clone(), unknown_identifiers);
+//                 }
+//                 (is_space, is_lex)
+//             }
+//             AST::Sequence(exprs) | AST::Choice(exprs) => {
+//                 let (mut all_spaces, mut all_lex) = (Some(true), Some(true));
+//                 for expr in exprs {
+//                     let (is_space, is_lex) = self.traverse(expr);
+//                     all_spaces = match (is_space, all_spaces) {
+//                         (Some(true), Some(true)) => Some(true),
+//                         (Some(true) | None, Some(true) | None) => None,
+//                         _ => Some(false),
+//                     };
+//                     all_lex = match (is_lex, all_lex) {
+//                         (Some(true), Some(true)) => Some(true),
+//                         (Some(false), Some(false)) => Some(false),
+//                         (None, _) | (_, None) => None,
+//                         (Some(true), Some(false)) | (Some(false), Some(true)) => Some(true),
+//                     };
+//                 }
+//                 (all_spaces, all_lex)
+//             }
+//             AST::Range(a, b) => {
+//                 self.lexical_tokens.push(AST::Range(*a, *b));
+//                 let is_space = if char::is_whitespace(*a) && char::is_whitespace(*b) {
+//                     Some(true)
+//                 } else {
+//                     Some(false)
+//                 };
+//                 (is_space, Some(true))
+//             }
+//             AST::Str(st) => {
+//                 self.lexical_tokens.push(AST::Str(st.clone()));
+//                 let is_space = if st.chars().all(|s| char::is_whitespace(s)) {
+//                     Some(true)
+//                 } else {
+//                     Some(false)
+//                 };
+//                 (is_space, Some(true))
+//             }
+//             AST::Char(c) => {
+//                 self.lexical_tokens.push(AST::Char(*c));
+//                 let is_space = if char::is_whitespace(*c) {
+//                     Some(true)
+//                 } else {
+//                     Some(false)
+//                 };
+//                 (is_space, Some(true))
+//             }
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub enum Error {
@@ -754,39 +739,92 @@ pub struct Parser {
     cursor: usize,
     ffp: usize,
     source: Vec<char>,
+    filename: String,
 }
 
 type ParseFn<T> = fn(&mut Parser) -> Result<T, Error>;
 
 impl Parser {
-    pub fn new(s: &str) -> Self {
-        return Parser {
+    pub fn new(s: &str, filename: String) -> Self {
+        Parser {
             cursor: 0,
             ffp: 0,
             source: s.chars().collect(),
-        };
+            filename,
+        }
     }
 
-    // GR: Grammar <- Spacing (Definition / LabelDefinition)+ EndOfFile
-    pub fn parse_grammar(&mut self) -> Result<AST, Error> {
-        self.parse_spacing()?;
-        let defs = self.one_or_more(|p| {
-            p.choice(vec![|p| p.parse_label_definition(), |p| {
-                p.parse_definition()
-            }])
-        })?;
+    pub fn parse(&mut self) -> Result<AST, Error> {
+        let definitions = self
+            .one_or_more(|p| p.parse_lang())?
+            .into_iter()
+            .filter_map(|def| match def {
+                AST::Lang {
+                    name,
+                    aliases,
+                    rules,
+                } => Some((
+                    name.clone(),
+                    AST::Lang {
+                        name,
+                        aliases,
+                        rules,
+                    },
+                )),
+                _ => None,
+            })
+            .collect();
+
         self.parse_eof()?;
-        Ok(AST::Grammar(defs))
+
+        let filename = self.filename.clone();
+
+        Ok(AST::Module {
+            filename,
+            aliases: HashMap::new(),
+            definitions,
+        })
     }
 
-    // GR: Definition <- Identifier LEFTARROW Expression
-    fn parse_definition(&mut self) -> Result<AST, Error> {
-        let id = self.parse_identifier()?;
+    // GR: Lang <- LANG Name OPEN Rule+ CLOSE
+    pub fn parse_lang(&mut self) -> Result<AST, Error> {
+        self.parse_spacing()?;
+        self.expect_str("lang")?;
+        self.parse_required_spacing()?;
+
+        let name = self.parse_identifier()?;
+        self.parse_spacing()?;
+        self.expect_str("{")?;
+        self.parse_spacing()?;
+
+        let rules = self
+            .one_or_more(|p| p.choice(vec![|p| p.parse_label_definition(), |p| p.parse_rule()]))?
+            .into_iter()
+            .filter_map(|rule| match rule {
+                AST::Rule { name, expression } => {
+                    Some((name.clone(), AST::Rule { name, expression }))
+                }
+                AST::LabelDef { name, message } => {
+                    Some((name.clone(), AST::LabelDef { name, message }))
+                }
+                _ => None,
+            })
+            .collect();
+
+        self.expect_str("}")?;
+        self.parse_spacing()?;
+
+        Ok(AST::Lang { name, aliases: HashMap::new(), rules })
+    }
+
+    // GR: Rule <- Identifier LEFTARROW Expression
+    fn parse_rule(&mut self) -> Result<AST, Error> {
+        let name = self.parse_identifier()?;
         self.expect('<')?;
         self.expect('-')?;
         self.parse_spacing()?;
-        let expr = self.parse_expression()?;
-        Ok(AST::Definition(id, Box::new(expr)))
+        let expression = Box::new(self.parse_expression()?);
+        Ok(AST::Rule { name, expression })
     }
 
     // GR: LabelDefinition <- LABEL Identifier EQ Literal
@@ -797,7 +835,10 @@ impl Parser {
         self.expect('=')?;
         self.parse_spacing()?;
         let literal = self.parse_literal()?;
-        Ok(AST::LabelDefinition(label, literal))
+        Ok(AST::LabelDef {
+            name: label,
+            message: literal,
+        })
     }
 
     // GR: Expression <- Sequence (SLASH Sequence)*
@@ -816,7 +857,7 @@ impl Parser {
         })
     }
 
-    // GR: Sequence <- Prefix*
+    // GR: Sequence <- (Bind / Prefix)*
     fn parse_sequence(&mut self) -> Result<AST, Error> {
         let seq = self.zero_or_more(|p| p.parse_prefix())?;
         Ok(AST::Sequence(if seq.is_empty() {
@@ -1090,6 +1131,11 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_required_spacing(&mut self) -> Result<(), Error> {
+        self.one_or_more(|p| p.choice(vec![|p| p.parse_space(), |p| p.parse_comment()]))?;
+        Ok(())
+    }
+
     // GR: Comment <- ’#’ (!EndOfLine.)* EndOfLine
     fn parse_comment(&mut self) -> Result<(), Error> {
         self.expect('#')?;
@@ -1236,192 +1282,146 @@ impl Parser {
     }
 }
 
-#[cfg(test)]
-mod stage1_tests {
-    use super::*;
+// #[cfg(test)]
+// mod stage1_tests {
+//     use super::*;
 
-    #[test]
-    fn a01() {
-        let grammar_text = "
-             A <- B C       # is_space: false, is_lex: false
-             B <- 'a'       # is_space: false, is_lex: true
-             C <- 'b'       # is_space: false, is_lex: true
-             D <- ' '       # is_space: true; literal space
-             E <- '\t'      # is_space: true; escaped tab
-             F <- '\n'      # is_space: true; escaped new line
-             G <- '\r'      # is_space: true; escaped carriage return
-             H <- ' ' G     # is_space: true; identifier points to a space rule
-             I <- ' ' '\t'  # is_space: true; sequence made only of literal spaces
-             J <- '\n'      # is_space: true; all options are literal space chars
-                / '\r\n'
-                / '\r'
-            ";
-        let grammar = Parser::new(grammar_text).parse_grammar().unwrap();
+//     #[test]
+//     fn a01() {
+//         let grammar_text = "
+//              A <- B C       # is_space: false, is_lex: false
+//              B <- 'a'       # is_space: false, is_lex: true
+//              C <- 'b'       # is_space: false, is_lex: true
+//              D <- ' '       # is_space: true; literal space
+//              E <- '\t'      # is_space: true; escaped tab
+//              F <- '\n'      # is_space: true; escaped new line
+//              G <- '\r'      # is_space: true; escaped carriage return
+//              H <- ' ' G     # is_space: true; identifier points to a space rule
+//              I <- ' ' '\t'  # is_space: true; sequence made only of literal spaces
+//              J <- '\n'      # is_space: true; all options are literal space chars
+//                 / '\r\n'
+//                 / '\r'
+//             ";
+//         let grammar = Parser::new(grammar_text, "test".to_string())
+//             .parse_grammar()
+//             .unwrap();
 
-        let mut stage1 = Stage1::new_with_space_rules(vec![]);
-        stage1.run(&grammar);
+//         let mut stage1 = Stage1::new_with_space_rules(vec![]);
+//         stage1.run(&grammar);
 
-        let mut lexical_rules = stage1
-            .rule_is_lexical
-            .iter()
-            .filter_map(|(k, v)| if *v == Some(true) { Some(k) } else { None })
-            .collect::<Vec<_>>();
-        lexical_rules.sort_unstable();
+//         let mut lexical_rules = stage1
+//             .rule_is_lexical
+//             .iter()
+//             .filter_map(|(k, v)| if *v == Some(true) { Some(k) } else { None })
+//             .collect::<Vec<_>>();
+//         lexical_rules.sort_unstable();
 
-        assert_eq!(
-            ["B", "C", "D", "E", "F", "G", "H", "I", "J"]
-                .iter()
-                .map(|i| i.to_owned())
-                .collect::<Vec<_>>(),
-            lexical_rules
-        );
+//         assert_eq!(
+//             ["B", "C", "D", "E", "F", "G", "H", "I", "J"]
+//                 .iter()
+//                 .map(|i| i.to_owned())
+//                 .collect::<Vec<_>>(),
+//             lexical_rules
+//         );
 
-        let mut space_rules = stage1.rule_is_space
-            .iter()
-            .filter_map(|(k, v)| if *v == Some(true) { Some(k) } else { None })
-            .collect::<Vec<_>>();
-        space_rules.sort_unstable();
+//         let mut space_rules = stage1
+//             .rule_is_space
+//             .iter()
+//             .filter_map(|(k, v)| if *v == Some(true) { Some(k) } else { None })
+//             .collect::<Vec<_>>();
+//         space_rules.sort_unstable();
 
-        assert_eq!(
-            ["D", "E", "F", "G", "H", "I", "J"]
-                .iter()
-                .map(|i| i.to_owned())
-                .collect::<Vec<_>>(),
-            space_rules
-        );
-    }
-}
+//         assert_eq!(
+//             ["D", "E", "F", "G", "H", "I", "J"]
+//                 .iter()
+//                 .map(|i| i.to_owned())
+//                 .collect::<Vec<_>>(),
+//             space_rules
+//         );
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
-    fn structure_empty() {
-        let mut p = Parser::new(
-            "A <- 'a' /
-             B <- 'b'
-            ",
-        );
-        let out = p.parse_grammar();
-
-        assert!(out.is_ok());
-        assert_eq!(
-            AST::Grammar(vec![
-                AST::Definition(
-                    "A".to_string(),
-                    Box::new(AST::Choice(vec![
-                        AST::Sequence(vec![AST::Str("a".to_string())]),
-                        AST::Sequence(vec![AST::Empty])
-                    ]))
-                ),
-                AST::Definition(
-                    "B".to_string(),
-                    Box::new(AST::Sequence(vec![AST::Str("b".to_string())])),
-                ),
-            ]),
-            out.unwrap()
-        );
-    }
-
-    #[test]
-    fn follows_1() {
-        let mut c = Compiler::new();
-        let out = c.compile_str(
+    fn parse_rules() {
+        let out = Parser::new(
             "
-            A <- 'a'
-            B <- 'b' 'k' 'l'
-            C <- ('m' / 'n') 'o'
-            TerminalAfterIdentifier    <- A ';'
-            ChoiceAfterIdentifier      <- A ('a' 'x' / 'b' 'y' / 'c' 'z')
-            IdentifierAfterIdentifier  <- A B ('k' / 'l')
-            IdChoiceAfterIdentifier    <- A C ('k' / 'l')
-            EOFAfterId                 <- A !.
-            ForwardIdentifier          <- A After
-            After                      <- '1' / '2'
-            ",
-        );
+            lang lng1 {
+               A <- 'd'
+               E <- 'h'
+            }
 
-        // This should be how the First sets look for the above
-        // grammar:
-        //
-        //     First(A) = {'JustATerminal'}
-        //     First(B) = {'b'}
-        //     First(C) = {'m' 'n'}
-        //     First(TerminalAfterIdentifier)              = First(A)
-        //     First(ChoiceAfterIdentifier)                = First(A)
-        //        First(ChoiceAfterIdentifier + A)         = {'a' 'b' 'c'}
-        //     First(IdentifierAfterIdentifier)            = First(A)
-        //        First(IdentifierAfterIdentifier + A + B) = {'k' 'l'}
-        //     First(IdChoiceAfterIdentifier)              = First(A)
-        //        First(IdChoiceAfterIdentifier + A)       = First(C)
-        //        First(IdChoiceAfterIdentifier + A + C)   = {'k' 'l'}
-        //     First(ForwardIdentifier)                    = First(A)
-        //        First(ForwardIdentifier + A)             = First(After)
-        //     First(After) = {'1' '2'}
-        //
-        // These asserts are looking at the follow set for the call
-        // site of the production A within productions `*Identifier`
+            lang lng2 {
+              I <- A / E
+            }
+            ",
+            "test file".to_string(),
+        )
+        .parse();
 
         assert!(out.is_ok());
-        let fns: HashMap<String, usize> = c
-            .funcs
-            .iter()
-            .map(|(k, v)| (c.strings[*k].clone(), v.addr + 2)) // 2 for call+capture
-            .collect();
-        let p = c.program();
-
         assert_eq!(
-            vec![";".to_string()],
-            p.expected(fns["TerminalAfterIdentifier"])
-        );
-        assert_eq!(
-            vec!["a".to_string(), "b".to_string(), "c".to_string()],
-            p.expected(fns["ChoiceAfterIdentifier"])
-        );
-        assert_eq!(
-            vec!["b".to_string()],
-            p.expected(fns["IdentifierAfterIdentifier"])
-        );
-        assert_eq!(
-            vec!["m".to_string(), "n".to_string()],
-            p.expected(fns["IdChoiceAfterIdentifier"])
-        );
-        assert_eq!(
-            vec!["1".to_string(), "2".to_string()],
-            p.expected(fns["ForwardIdentifier"])
-        );
-    }
-
-    #[test]
-    fn follows_2() {
-        let mut c = Compiler::new();
-        let out = c.compile_str(
-            "
-            A <- B / C
-            B <- 'b' / C
-            C <- 'c'
-            IDAfterIDWithChoiceWithIDs <- A A
-            ",
-        );
-
-        assert!(out.is_ok());
-        let fns: HashMap<String, usize> = c
-            .funcs
-            .iter()
-            .map(|(k, v)| (c.strings[*k].clone(), v.addr + 2)) // 2 for call+capture
-            .collect();
-        let p = c.program();
-
-        assert_eq!(
-            vec!["b".to_string(), "c".to_string()],
-            p.expected(fns["IDAfterIDWithChoiceWithIDs"])
+            out.unwrap(),
+            AST::Module {
+                filename: "test file".to_string(),
+                aliases: HashMap::new(),
+                definitions: HashMap::from([
+                    (
+                        "lng1".to_string(),
+                        AST::Lang {
+                            name: "lng1".to_string(),
+                            aliases: HashMap::new(),
+                            rules: HashMap::from([
+                                (
+                                    "A".to_string(),
+                                    AST::Rule {
+                                        name: "A".to_string(),
+                                        expression: Box::new(AST::Sequence(vec![AST::Str(
+                                            "d".to_string()
+                                        )])),
+                                    },
+                                ),
+                                (
+                                    "E".to_string(),
+                                    AST::Rule {
+                                        name: "E".to_string(),
+                                        expression: Box::new(AST::Sequence(vec![AST::Str(
+                                            "h".to_string()
+                                        )])),
+                                    },
+                                ),
+                            ]),
+                        },
+                    ),
+                    (
+                        "lng2".to_string(),
+                        AST::Lang {
+                            name: "lng2".to_string(),
+                            aliases: HashMap::new(),
+                            rules: HashMap::from([(
+                                "I".to_string(),
+                                AST::Rule {
+                                    name: "I".to_string(),
+                                    expression: Box::new(AST::Choice(vec![
+                                        AST::Sequence(vec![AST::Identifier("A".to_string())]),
+                                        AST::Sequence(vec![AST::Identifier("E".to_string())]),
+                                    ])),
+                                },
+                            )]),
+                        },
+                    ),
+                ]),
+            }
         );
     }
 
     #[test]
     fn choice_pick_none() -> Result<(), Error> {
-        let mut parser = Parser::new("e");
+        let mut parser = Parser::new("e", "test".to_string());
         let out = parser.choice(vec![
             |p| p.expect('a'),
             |p| p.expect('b'),
@@ -1437,7 +1437,7 @@ mod tests {
 
     #[test]
     fn choice_pick_last() -> Result<(), Error> {
-        let mut parser = Parser::new("d");
+        let mut parser = Parser::new("d", "test".to_string());
         let out = parser.choice(vec![
             |p| p.expect('a'),
             |p| p.expect('b'),
@@ -1453,7 +1453,7 @@ mod tests {
 
     #[test]
     fn choice_pick_first() -> Result<(), Error> {
-        let mut parser = Parser::new("a");
+        let mut parser = Parser::new("a", "test".to_string());
         let out = parser.choice(vec![|p| p.expect('a')]);
 
         assert!(out.is_ok());
@@ -1464,7 +1464,7 @@ mod tests {
 
     #[test]
     fn not_success_on_err() -> Result<(), Error> {
-        let mut parser = Parser::new("a");
+        let mut parser = Parser::new("a", "test".to_string());
         let out = parser.not(|p| p.expect('b'));
 
         assert!(out.is_ok());
@@ -1475,7 +1475,7 @@ mod tests {
 
     #[test]
     fn not_err_on_match() -> Result<(), Error> {
-        let mut parser = Parser::new("a");
+        let mut parser = Parser::new("a", "test".to_string());
         let out = parser.not(|p| p.expect('a'));
 
         assert!(out.is_err());
@@ -1486,7 +1486,7 @@ mod tests {
 
     #[test]
     fn zero_or_more() -> Result<(), Error> {
-        let mut parser = Parser::new("ab2");
+        let mut parser = Parser::new("ab2", "test".to_string());
 
         let prefix = parser.zero_or_more::<char>(|p| p.expect_range('a', 'z'))?;
 

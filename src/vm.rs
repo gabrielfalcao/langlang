@@ -81,6 +81,19 @@ pub struct Program {
     code: Vec<Instruction>,
 }
 
+impl Default for Program {
+    fn default() -> Self {
+        return Program {
+            identifiers: HashMap::new(),
+            follows: HashMap::new(),
+            labels: HashMap::new(),
+            recovery: HashMap::new(),
+            strings: vec![],
+            code: vec![],
+        };
+    }
+}
+
 impl Program {
     pub fn new(
         identifiers: HashMap<usize, usize>,
@@ -123,7 +136,7 @@ impl Program {
                 // println!("   IDSSS: {:?}", ids);
                 // println!("   STUFF: {:?}", stuff);
                 stuff
-            },
+            }
         }
     }
 
@@ -255,43 +268,72 @@ struct LeftRecTableEntry {
     bound: usize,
 }
 
+type Symbol = Vec<String>;
+
+#[derive(Debug)]
+struct SymbolTable {
+    symbols: HashMap<Symbol, usize>,
+    addresses: HashMap<usize, Symbol>,
+}
+
+impl SymbolTable {
+    fn new() -> Self {
+        Self {
+            symbols: HashMap::new(),
+            addresses: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct VM {
-    // Cursor within input, error means matching failed
+    /// Cursor within input, error means matching failed
     cursor: Result<usize, Error>,
-    // Farther Failure Position
+    /// Farther Failure Position
     ffp: usize,
-    // Input source
+    /// Input source
     source: Vec<char>,
-    // Vector of instructions and tables with literal values
+    /// Vector of instructions and tables with literal values
     program: Program,
-    // Cursor within the program
+    /// Contains information about symbols from programs
+    symbols: SymbolTable,
+    /// Where programs are loaded.  Notice that positions 0 and 1 are
+    /// invariants.  Meaning that they're hardcoded and programs are
+    /// only loaded from position 2 ownards.  Before the VM is
+    /// executed, the position 0 is rewritten with the address of the
+    /// starting symbol, that's only fully figured out after
+    /// recursively loading modules and relocation.
+    program_memory: Vec<Instruction>,
+    /// Cursor within the program memory
     program_counter: usize,
-    // Stack of both backtrack and call frames
+    /// Stack of both backtrack and call frames
     stack: Vec<StackFrame>,
-    // last call frame
+    /// stack with call frame indices
     call_frames: Vec<usize>,
-    // Memoized position of left recursive results
+    /// Memoized position of left recursive results
     lrmemo: HashMap<LeftRecTableKey, LeftRecTableEntry>,
-    // Where value returned from successful match operation is stored
+    /// Where value returned from successful match operation is stored
     accumulator: Option<Value>,
-    // Set of tokens that are displayed as expected upon error
+    /// Set of tokens that are displayed as expected upon error
     expected: Vec<usize>,
-    // Error log contains all errors captured during recovery.  It is
-    // a vector containing pairs made of the label recovered and the
-    // position in the cursor where it started
+    /// Error log contains all errors captured during recovery.  It is
+    /// a vector containing pairs made of the label recovered and the
+    /// position in the cursor where it started
     error_log: Vec<(usize, usize)>,
-    // boolean flag that remembers if the VM is within a predicate
+    /// boolean flag that remembers if the VM is within a predicate
     within_predicate: bool,
 }
 
 impl VM {
-    pub fn new(program: Program) -> Self {
+    pub fn new() -> Self {
+        let program_memory = vec![Instruction::Call(1, 0), Instruction::Halt];
         VM {
             ffp: 0,
             cursor: Ok(0),
             source: vec![],
-            program,
+            program: Program::default(),
+            symbols: SymbolTable::new(),
+            program_memory,
             program_counter: 0,
             stack: vec![],
             call_frames: vec![],
@@ -301,6 +343,10 @@ impl VM {
             error_log: vec![],
             within_predicate: false,
         }
+    }
+
+    pub fn load(&mut self, program: Program) {
+        self.program = program;
     }
 
     fn advance_cursor(&mut self) -> Result<(), Error> {
@@ -375,7 +421,10 @@ impl VM {
                 Err(_) => (Instruction::Fail, 0),
             };
 
-            debug!("[{:?},{:?}] I: {:?}", self.program_counter, cursor, instruction);
+            debug!(
+                "[{:?},{:?}] I: {:?}",
+                self.program_counter, cursor, instruction
+            );
 
             // if let Some(expected)
 
@@ -682,7 +731,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("a");
 
         assert!(result.is_ok());
@@ -712,7 +762,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("b");
 
         assert!(result.is_err());
@@ -741,7 +792,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("a");
 
         assert!(result.is_ok());
@@ -771,7 +823,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("9");
 
         assert!(result.is_err());
@@ -800,7 +853,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("abcd");
 
         assert!(result.is_ok());
@@ -828,7 +882,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("");
 
         assert!(result.is_err());
@@ -861,7 +916,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("foo");
 
         assert!(result.is_ok());
@@ -894,7 +950,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("foo");
 
         assert!(result.is_err());
@@ -928,7 +985,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("c");
 
         assert!(result.is_err());
@@ -961,7 +1019,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("a");
 
         assert!(result.is_ok());
@@ -994,7 +1053,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("b");
 
         assert!(result.is_ok());
@@ -1026,7 +1086,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("aab");
 
         assert!(result.is_ok());
@@ -1058,7 +1119,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("b");
 
         assert!(result.is_ok());
@@ -1099,7 +1161,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("1+1");
 
         assert!(result.is_ok());
@@ -1140,7 +1203,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("1+2");
 
         assert!(result.is_err());
@@ -1171,7 +1235,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("321");
 
         assert!(result.is_err());
@@ -1204,7 +1269,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("n+n+n");
 
         assert!(result.is_ok());
@@ -1246,7 +1312,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("0+1");
 
         assert!(result.is_ok());
@@ -1295,7 +1362,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("0+1*1");
 
         assert!(result.is_ok());
@@ -1331,7 +1399,8 @@ mod tests {
                 Instruction::Return,
             ],
         };
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("axyz");
 
         assert!(result.is_err());
@@ -1359,7 +1428,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("abacate");
 
         assert!(result.is_ok());
@@ -1391,7 +1461,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("abacaxi");
 
         assert!(result.is_err());
@@ -1435,7 +1506,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("abada");
 
         assert!(result.is_ok());
@@ -1486,7 +1558,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("1");
 
         assert!(result.is_ok());
@@ -1555,7 +1628,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("abada");
 
         assert!(result.is_ok());
@@ -1626,7 +1700,8 @@ mod tests {
             ],
         };
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new();
+        vm.load(program);
         let result = vm.run("12+34*56");
 
         assert!(result.is_ok());
