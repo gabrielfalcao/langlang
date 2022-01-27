@@ -1,32 +1,41 @@
-use std::fs;
-use langlang::{parser, vm};
+use std::{fs, io};
+use langlang::{parser};
 
-fn run_grammar_on_input_from_cmd() -> Result<(), std::io::Error> {
-    let grammar_file = std::env::args().nth(1).expect("no grammar given");
-    let input_file = std::env::args().nth(2).expect("no input given");
+#[derive(Debug)]
+enum Error {
+    InputError(String),
+    IOError(String),
+    ParsingError(String),
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IOError(e.to_string())
+    }
+}
+
+impl From<langlang::parser::Error> for Error {
+    fn from(e: langlang::parser::Error) -> Self {
+        Error::ParsingError(e.to_string())
+    }
+}
+
+fn main() -> Result<(), Error> {
+    env_logger::init();
+
+    let mut args = std::env::args();
+    if args.len() != 2 {
+        println!("Usage: {} GRAMMAR-FILE", args.nth(0).unwrap());
+        return Err(Error::InputError("Grammar file not provided".to_string()));
+    }
+
+    let grammar_file = args.nth(1).unwrap();
     let grammar_data = fs::read_to_string(grammar_file)?;
     let mut c = parser::Compiler::new();
-    if let Err(e) = c.compile_str(grammar_data.as_str()) {
-        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string()));
-    }
+    c.compile_str(grammar_data.as_str())?;
 
     let p = c.program();
     println!("Compiled:\n{}", p.to_string());
 
-    let input_data = fs::read_to_string(input_file)?;
-    let mut m = vm::VM::new(p);
-    match m.run(&input_data) {
-        Ok(Some(v)) => println!("{:#?}", v),
-        Ok(None) => println!("not much"),
-        Err(e) => println!("{:?}", e),
-    }
     Ok(())
-}
-
-fn main() {
-    env_logger::init();
-
-    if let Err(e) = run_grammar_on_input_from_cmd() {
-        println!("{}", e.to_string());
-    }
 }

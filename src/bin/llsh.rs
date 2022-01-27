@@ -75,11 +75,11 @@ fn shell() -> Result<(), ShellError> {
         line.pop();
 
         // run the line
-        let mut m = vm::VM::new(p.clone());
-        match m.run(&line) {
-            Ok(Some(v)) => println!("{:#?}", v),
-            Ok(None) => println!("not much"),
-            Err(e) => return Err(ShellError::RuntimeError(e)),
+        let mut m = vm::VM::new();
+        m.load(p.clone());
+        match m.run(&line)? {
+            Some(v) => println!("{:#?}", v),
+            None => println!("not much"),
         }
     }
 
