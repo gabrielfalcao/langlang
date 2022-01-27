@@ -27,6 +27,7 @@
 ;;
 ;;; Code:
 
+
 (defconst peg-mode-syntax-table
   (let ((table (make-syntax-table)))
     ;; [] should also look like strings
@@ -42,26 +43,72 @@
     (modify-syntax-entry ?\n "> b" table)
     table))
 
+
+(defvar peg-mode-keywords
+  '("lang" "<-" "->"))
+
+
 (defvar peg-font-lock-defaults
   `((
+     ;; keywords
+     (,(regexp-opt peg-mode-keywords) . font-lock-keyword-face)
      ;; Color the name of the rule
-     ("^\s*\\([a-zA-Z_][a-zA-Z0-9_]*\\)\s*<-" 1 'font-lock-function-name-face)
+     ("^\s*\\([a-zA-Z_][a-zA-Z0-9_]*\\)[\s\n:a-zA-Z0-9_]*<-" 1 'font-lock-function-name-face)
      ;; Color for the little assignment arrow
-     ("<-" . font-lock-type-face)
+     ("lang\s*\\([a-zA-Z_][a-zA-Z0-9_]*\\)\s*" 1 'font-lock-type-face)
      ;; ! & * + ? ( ) / are operators
      ("!\\|&\\|*\\|+\\|?\\|(\\|)\\|/" . font-lock-builtin-face)
      ;; Color for label
      ("\\(\\^[a-zA-Z_][a-zA-Z0-9_]*\\)" 1 'font-lock-constant-face)
+     ;; Color for dotted names
+     ("::\\([a-zA-Z_][a-zA-Z0-9_]*\\)" 1 'font-lock-type-face)
      ;; Color for assignment of a name to a piece of the expression.
-     ("\\(:[^\s]+\\)" 1 'font-lock-variable-name-face))))
+     ("\\(:[a-zA-Z_][a-zA-Z0-9_]*\\)" 1 'font-lock-variable-name-face))))
+
+
+(defun peg-mode-indent-line ()
+  "Indent current line as PEG code."
+  (interactive)
+  (beginning-of-line)
+  (if (bobp)  ; Check for rule 1
+      (indent-line-to 0)
+    (let ((not-indented t) cur-indent)
+      (if (looking-at "^[ \t]*}")
+          (progn
+            (save-excursion
+              (forward-line -1)
+              (setq cur-indent (- (current-indentation) default-tab-width)))
+            (if (< cur-indent 0)
+                (setq cur-indent 0)))
+        (save-excursion
+          (while not-indented
+            (forward-line -1)
+            (if (looking-at "^[ \t]*}") ; Check for rule 3
+                (progn
+                  (setq cur-indent (current-indentation))
+                  (setq not-indented nil))
+                                        ; Check for rule 4
+              (if (looking-at "^[ \t]*lang[ \t]*[a-zA-Z_][a-zA-Z0-9_]*[ \t]*{")
+                  (progn
+                    (setq cur-indent (+ (current-indentation) default-tab-width))
+                    (setq not-indented nil))
+                (if (bobp) ; Check for rule 5
+                    (setq not-indented nil)))))))
+      (if cur-indent
+          (indent-line-to cur-indent)
+        (indent-line-to 0))))) ; If we didn't see an indentation hint, then allow no indentation
+
 
 ;;;###autoload
 (define-derived-mode peg-mode prog-mode "PEG Mode"
   :syntax-table peg-mode-syntax-table
+  (set (make-local-variable 'default-tab-width) 2)
   (set (make-local-variable 'comment-start) "#")
   (set (make-local-variable 'comment-end) "")
   (set (make-local-variable 'font-lock-defaults)
        peg-font-lock-defaults)
+  (set (make-local-variable 'indent-line-function)
+       'peg-mode-indent-line)
   (font-lock-ensure))
 
 ;;;###autoload
