@@ -1,3 +1,6 @@
+;; copied from RFC3986 Appendix A.  Collected ABNF for URI
+;; https://datatracker.ietf.org/doc/html/rfc3986
+
 URI           = scheme ":" hier-part [ "?" query ] [ "#" fragment ]
 
 hier-part     = "//" authority path-abempty
