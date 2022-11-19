@@ -324,6 +324,25 @@ mod tests {
         assert_success("A[[[aba]cate]]", run(&p, input_with_str).unwrap());
     }
 
+    // -- Capture Configuration  -----------------------------------------------
+
+    #[test]
+    fn test_disable_capture() {
+        let cc = compiler::Config::default();
+        let p = compile(
+            &cc,
+            r"
+             Decimal <- [0-9]+ Spaces
+             @capoff
+             Spaces  <- (' ' / '\t' / '\r\n' / '\n' / '\r')*
+            ",
+        );
+        assert_success("Decimal[20]", run_str(&p, "20  "));
+        assert_success("Decimal[20]", run_str(&p, "20\n"));
+        assert_success("Decimal[20]", run_str(&p, "20\t"));
+        assert_success("Decimal[20]", run_str(&p, "20 \t"));
+    }
+
     // -- Expand Grammar -------------------------------------------------------
 
     #[test]

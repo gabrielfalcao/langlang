@@ -2,7 +2,8 @@
 
 # Hierarchical syntax
 Grammar    <- _ Definition+ EndOfFile
-Definition <- Identifier LEFTARROW Expression
+Definition <- Annotation? Identifier LEFTARROW Expression
+Annotation <- AT Identifier
 
 Expression <- Sequence (SLASH Sequence)*
 Sequence   <- Prefix*
@@ -25,6 +26,7 @@ Char       <- '\\' [nrt'"\[\]\\]
             / !'\\' .
 Superscript<- [¹²³⁴⁵⁶⁷⁸⁹] _
 
+AT         <- '@'  _
 LEFTARROW  <- '<-' _
 SLASH      <- '/'  _
 AND        <- '&'  _
@@ -39,9 +41,11 @@ CLOSEC     <- '}'  _
 DOT        <- '.'  _
 LABEL      <- [^⇑] _
 
-
+@capnowrap
 _    <- (Space / Comment)*
 Comment    <- '#' (!EndOfLine .)* EndOfLine
+@capoff
 Space      <- ' ' / '\t' / EndOfLine
+@capoff
 EndOfLine  <- '\r\n' / '\n' / '\r'
 EndOfFile  <- !.

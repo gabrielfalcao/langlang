@@ -93,6 +93,13 @@ pub enum Error {
     EOF,
 }
 
+#[derive(Debug, Clone)]
+pub enum CaptureType {
+    Capture,
+    Disabled,
+    NoWrap,
+}
+
 #[derive(Clone, Debug)]
 pub struct Program {
     // Map with keys as the position of the first instruction of each
@@ -110,6 +117,8 @@ pub struct Program {
     // production identifiers.  IDs are assigned in the order they are
     // requested.
     strings: Vec<String>,
+    // What capture config should each call use
+    caps: HashMap<usize, CaptureType>,
     // Array of instructions that get executed by the virtual machine
     code: Vec<Instruction>,
 }
@@ -120,6 +129,7 @@ impl Program {
         labels: HashMap<usize, usize>,
         recovery: HashMap<usize, usize>,
         strings: Vec<String>,
+        caps: HashMap<usize, CaptureType>,
         code: Vec<Instruction>,
     ) -> Self {
         Program {
@@ -127,6 +137,7 @@ impl Program {
             labels,
             recovery,
             strings,
+            caps,
             code,
         }
     }
@@ -684,8 +695,18 @@ impl<'a> VM<'a> {
             let values = self.capstkpop()?.values;
             if !values.is_empty() {
                 let name = self.program.identifier(address);
-                let items = vec![Value::Str(name), Value::List(values)];
-                self.capture(Value::List(items))?;
+                match self.program.caps.get(&address) {
+                    None | Some(CaptureType::Capture) => {
+                        let items = vec![Value::Str(name), Value::List(values)];
+                        self.capture(Value::List(items))?;
+                    }
+                    Some(CaptureType::NoWrap) => {
+                        for v in values {
+                            self.capture(v)?;
+                        }
+                    }
+                    Some(CaptureType::Disabled) => {}
+                }
             }
             return Ok(());
         }
@@ -828,6 +849,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -856,6 +878,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -884,6 +907,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -912,6 +936,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -938,6 +963,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -966,6 +992,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -995,6 +1022,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1026,6 +1054,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1058,6 +1087,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1090,6 +1120,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1121,6 +1152,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1153,6 +1185,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1183,6 +1216,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1214,6 +1248,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1253,6 +1288,7 @@ mod tests {
             identifiers: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1288,6 +1324,7 @@ mod tests {
             identifiers,
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["E".to_string()],
             code: vec![
                 Instruction::Call(2, 1),
@@ -1320,6 +1357,7 @@ mod tests {
             identifiers,
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["E".to_string()],
             code: vec![
                 Instruction::Call(2, 1),
@@ -1352,6 +1390,7 @@ mod tests {
             identifiers,
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["E".to_string(), "D".to_string()],
             code: vec![
                 Instruction::Call(2, 1),
@@ -1393,6 +1432,7 @@ mod tests {
             identifiers,
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["E".to_string(), "D".to_string()],
             code: vec![
                 Instruction::Call(2, 1),
@@ -1440,6 +1480,7 @@ mod tests {
             labels,
             strings,
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             code: vec![
                 Instruction::Call(2, 0),
                 Instruction::Halt,
@@ -1471,6 +1512,7 @@ mod tests {
             identifiers: [(2, 0)].iter().cloned().collect(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string(), "abacate".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1502,6 +1544,7 @@ mod tests {
             identifiers: [(2, 0)].iter().cloned().collect(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string(), "abacate".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1527,6 +1570,7 @@ mod tests {
             identifiers: [(2, 0)].iter().cloned().collect(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string(), "abacate".to_string()],
             code: vec![
                 Instruction::Call(2, 0),
@@ -1552,6 +1596,7 @@ mod tests {
             identifiers,
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string()],
             code: vec![
                 // Call to first production follwed by the end of the matching
@@ -1608,6 +1653,7 @@ mod tests {
             identifiers,
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             strings: vec!["G".to_string(), "D".to_string()],
             code: vec![
                 /* 00 */ Instruction::Call(2, 0),

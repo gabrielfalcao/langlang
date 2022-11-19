@@ -51,14 +51,26 @@ impl Parser {
         Ok(AST::Grammar(defs))
     }
 
-    // GR: Definition <- Identifier LEFTARROW Expression
+    // GR: Definition <- Annotation Identifier LEFTARROW Expression
     fn parse_definition(&mut self) -> Result<AST, Error> {
+        let annotation = self.parse_annotation()?;
         let id = self.parse_identifier()?;
         self.expect('<')?;
         self.expect('-')?;
         self.parse_spacing()?;
         let expr = self.parse_expression()?;
-        Ok(AST::Definition(id, Box::new(expr)))
+        Ok(AST::Definition(id, annotation, Box::new(expr)))
+    }
+
+    // GR: Annotation <- AT Identifier
+    fn parse_annotation(&mut self) -> Result<Option<String>, Error> {
+        self.choice(vec![
+            |p| {
+                p.expect('@')?;
+                Ok(Some(p.parse_identifier()?))
+            },
+            |_| Ok(None),
+        ])
     }
 
     // GR: LabelDefinition <- LABEL Identifier EQ Literal
@@ -559,8 +571,9 @@ pub fn expand(ast: AST) -> Result<AST, Error> {
                 .collect();
             AST::Grammar(defs)
         }
-        AST::Definition(name, expr) => AST::Definition(
+        AST::Definition(name, annotations, expr) => AST::Definition(
             name.clone(),
+            annotations,
             Box::new(AST::List(vec![AST::Str(name), AST::List(vec![*expr])])),
         ),
         n => n,
@@ -583,6 +596,7 @@ mod tests {
         assert_eq!(
             AST::Grammar(vec![AST::Definition(
                 "A".to_string(),
+                None,
                 Box::new(AST::Choice(vec![
                     AST::Sequence(vec![
                         AST::Precedence(Box::new(AST::Identifier("A".to_string())), 1),
@@ -610,6 +624,7 @@ mod tests {
             AST::Grammar(vec![
                 AST::Definition(
                     "A".to_string(),
+                    None,
                     Box::new(AST::Choice(vec![
                         AST::Sequence(vec![AST::Str("a".to_string())]),
                         AST::Sequence(vec![AST::Empty])
@@ -617,6 +632,7 @@ mod tests {
                 ),
                 AST::Definition(
                     "B".to_string(),
+                    None,
                     Box::new(AST::Sequence(vec![AST::Str("b".to_string())])),
                 ),
             ]),

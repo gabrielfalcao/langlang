@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use log::debug;
 
+use phf::phf_map;
+
 use crate::{ast::AST, vm};
 
 #[derive(Debug)]
@@ -44,6 +46,15 @@ impl Config {
     }
 }
 
+static ANNOTATIONS: phf::Map<&'static str, vm::CaptureType> = phf_map! {
+    "capoff" => vm::CaptureType::Disabled,
+    "capnowrap" => vm::CaptureType::NoWrap,
+};
+
+pub fn get_capture_type_from_annotation(annotation: &str) -> Option<vm::CaptureType> {
+    ANNOTATIONS.get(annotation).cloned()
+}
+
 #[derive(Debug, Clone)]
 pub struct Compiler {
     // Enable configuring the compiler to some extent
@@ -78,6 +89,10 @@ pub struct Compiler {
     // Map from the set of names of functions to the boolean defining
     // if the function is left recursive or not
     left_rec: HashMap<String, bool>,
+    // Map from the set of function addresses to the capture
+    // configurations of each non-terminal.  If an address isn't here,
+    // it defaults to capturing it.
+    caps: HashMap<usize, vm::CaptureType>,
 }
 
 impl Compiler {
@@ -95,6 +110,7 @@ impl Compiler {
             addrs: HashMap::new(),
             labels: HashMap::new(),
             recovery: HashMap::new(),
+            caps: HashMap::new(),
             indent_level: 0,
             left_rec: HashMap::new(),
         }
@@ -112,6 +128,7 @@ impl Compiler {
             self.labels.clone(),
             self.recovery.clone(),
             self.strings.clone(),
+            self.caps.clone(),
             self.code.clone(),
         ))
     }
@@ -181,9 +198,10 @@ impl Compiler {
                 }
                 Ok(())
             }
-            AST::Definition(name, expr) => {
+            AST::Definition(name, annotation, expr) => {
                 let addr = self.cursor;
                 let strid = self.push_string(name);
+                self.attach_annotation(addr, annotation);
                 self.identifiers.insert(addr, strid);
                 self.compile_node(*expr)?;
                 self.emit(vm::Instruction::Return);
@@ -379,6 +397,20 @@ impl Compiler {
         self.cursor += 1;
     }
 
+    /// foo
+    fn attach_annotation(&mut self, addr: usize, annotation: Option<String>) {
+        let annotation_str = match annotation {
+            None => return,
+            Some(annotation) => annotation
+        };
+        match get_capture_type_from_annotation(&annotation_str) {
+            None => {},
+            Some(capture_type) => {
+                self.caps.insert(addr, capture_type);
+            },
+        }
+    }
+
     // Debugging helpers
 
     fn prt(&mut self, msg: &str) {
@@ -414,7 +446,7 @@ impl<'a> DetectLeftRec<'a> {
             AST::Grammar(definitions) => {
                 for definition in definitions {
                     match definition {
-                        AST::Definition(n, expr) => {
+                        AST::Definition(n, _, expr) => {
                             rules.insert(n, expr);
                         }
                         AST::LabelDefinition(..) => {},

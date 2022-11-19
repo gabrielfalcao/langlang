@@ -15,7 +15,7 @@
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub enum AST {
     Grammar(Vec<AST>),
-    Definition(String, Box<AST>),
+    Definition(String, Option<String>, Box<AST>),
     LabelDefinition(String, String),
     Sequence(Vec<AST>),
     Choice(Vec<AST>),
