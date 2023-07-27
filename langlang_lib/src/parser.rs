@@ -223,7 +223,7 @@ impl Parser {
             },
             |p| p.parse_node(),
             |p| p.parse_list(),
-            |p| Ok(AST::Str(p.parse_literal()?)),
+            |p| Ok(AST::String(p.parse_literal()?)),
             |p| Ok(AST::Choice(p.parse_class()?)),
             |p| {
                 p.parse_dot()?;
@@ -422,9 +422,10 @@ impl Parser {
         Ok(())
     }
 
-    // GR: Comment <- ’#’ (!EndOfLine.)* EndOfLine
+    // GR: Comment <- ’//’ (!EndOfLine.)* EndOfLine
     fn parse_comment(&mut self) -> Result<(), Error> {
-        self.expect('#')?;
+        self.expect('/')?;
+        self.expect('/')?;
         self.zero_or_more(|p| {
             p.not(|p| p.parse_eol())?;
             p.any()
@@ -618,10 +619,10 @@ mod tests {
                 Box::new(AST::Choice(vec![
                     AST::Sequence(vec![
                         AST::Precedence(Box::new(AST::Identifier("A".to_string())), 1),
-                        AST::Str("+".to_string()),
+                        AST::String("+".to_string()),
                         AST::Precedence(Box::new(AST::Identifier("A".to_string())), 2),
                     ]),
-                    AST::Sequence(vec![AST::Str("n".to_string()),])
+                    AST::Sequence(vec![AST::String("n".to_string()),])
                 ])),
             ),]),
             ast.unwrap(),
@@ -643,13 +644,13 @@ mod tests {
                 AST::Definition(
                     "A".to_string(),
                     Box::new(AST::Choice(vec![
-                        AST::Sequence(vec![AST::Str("a".to_string())]),
+                        AST::Sequence(vec![AST::String("a".to_string())]),
                         AST::Sequence(vec![AST::Empty])
                     ]))
                 ),
                 AST::Definition(
                     "B".to_string(),
-                    Box::new(AST::Sequence(vec![AST::Str("b".to_string())])),
+                    Box::new(AST::Sequence(vec![AST::String("b".to_string())])),
                 ),
             ]),
             out.unwrap()
